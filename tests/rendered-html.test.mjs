@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { areaWarning, parseArea, parseFarm, parseTask } from "../lib/domain-validation.js";
+import { areaWarning, parseAnimal, parseArea, parseFarm, parseMeasurement, parseTask } from "../lib/domain-validation.js";
+import { simulateGrazing } from "../lib/simulator.js";
 
 test("validates persistent farm, area and task payloads", () => {
   assert.deepEqual(parseFarm({ name: "Fazenda Santa Luzia", totalArea: "72" }), { name: "Fazenda Santa Luzia", totalArea: 72 });
@@ -15,6 +16,14 @@ test("warns when mapped areas exceed the farm total", () => {
   assert.equal(areaWarning(72, [{ id: 1, size: 24 }, { id: 2, size: 18 }], 20), null);
   assert.match(areaWarning(72, [{ id: 1, size: 24 }, { id: 2, size: 18 }], 31) ?? "", /ultrapassa/);
   assert.equal(areaWarning(72, [{ id: 1, size: 24 }, { id: 2, size: 18 }], 30, 2), null);
+});
+
+test("validates Sprint 3 herd, pasture and simulator rules", () => {
+  assert.deepEqual(parseAnimal({ identification: "BR-001", category: "Vaca", birthDate: "2024-01-10" }).identification, "BR-001");
+  assert.equal(parseMeasurement({ measuredAt: "2026-10-23", availability: 75, source: "manual" }).availability, 75);
+  assert.throws(() => parseMeasurement({ measuredAt: "2026-10-23", availability: 101, source: "manual" }), /entre 0 e 100/);
+  assert.equal(simulateGrazing({ animals: 48, area: 24, availability: 18 }), 1);
+  assert.throws(() => simulateGrazing({ animals: 0, area: 24, availability: 18 }), /válidos/);
 });
 
 async function render(path = "/") {

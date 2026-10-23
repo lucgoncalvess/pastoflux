@@ -13,13 +13,23 @@ export type ManagementTask = {
   status: "pending" | "completed";
   details: string;
 };
+export type Animal = { id: number; farmId: number; identification: string; category: string; weight: number | null; birthDate: string | null; active: boolean };
+export type Lot = { id: number; farmId: number; name: string };
+export type Movement = { id: number; farmId: number; lotId: number; origin: string | null; destination: string; originAreaId: number | null; destinationAreaId: number; movedAt: string; quantity: number; recoveryDays: number };
+export type PastureMeasurement = { id: number; farmId: number; areaId: number; measuredAt: string; availability: number; source: string; notes: string };
 
 /**
  * Cliente HTTP genérico com tratamento de erros da API.
  * Intercepta mensagens de erro do backend e lança Error tipado.
  */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, { headers: { "content-type": "application/json" }, ...init });
+  const headers = new Headers(init?.headers);
+  headers.set("content-type", "application/json");
+  if (typeof window !== "undefined") {
+    const activeFarmId = window.localStorage.getItem("pastoflux.activeFarmId");
+    if (activeFarmId) headers.set("x-farm-id", activeFarmId);
+  }
+  const response = await fetch(path, { ...init, headers });
   const body = (await response.json()) as T & { error?: string };
   if (!response.ok) throw new Error(body.error ?? "Não foi possível concluir a operação.");
   return body;
@@ -52,3 +62,26 @@ export const taskApi = {
     request<{ task: ManagementTask }>(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
 };
 
+export const animalApi = {
+  list: (farmId: number) => request<{ animals: Animal[] }>(`/api/animals?farmId=${farmId}`),
+  create: (payload: Omit<Animal, "id">) => request<{ animal: Animal }>("/api/animals", { method: "POST", body: JSON.stringify(payload) }),
+  update: (id: number, payload: Omit<Animal, "id">) => request<{ animal: Animal }>(`/api/animals/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+};
+export const lotApi = {
+  list: (farmId: number) => request<{ lots: Lot[] }>(`/api/lots?farmId=${farmId}`),
+  create: (payload: { farmId: number; name: string }) => request<{ lot: Lot }>("/api/lots", { method: "POST", body: JSON.stringify(payload) }),
+};
+export const movementApi = {
+  list: (farmId: number) => request<{ movements: Movement[] }>(`/api/movements?farmId=${farmId}`),
+  create: (payload: Omit<Movement, "id">) => request<{ movement: Movement }>("/api/movements", { method: "POST", body: JSON.stringify(payload) }),
+};
+export const occupationApi = {
+  list: (farmId: number) => request<{ occupations: { id: number; areaId: number; lotId: number; status: string; startedAt: string; endedAt: string | null }[] }>(`/api/occupations?farmId=${farmId}`),
+};
+export const measurementApi = {
+  list: (areaId: number) => request<{ measurements: PastureMeasurement[] }>(`/api/pasture-measurements?areaId=${areaId}`),
+  create: (payload: Omit<PastureMeasurement, "id">) => request<{ measurement: PastureMeasurement }>("/api/pasture-measurements", { method: "POST", body: JSON.stringify(payload) }),
+};
+export const herdStatsApi = {
+  get: (farmId: number, category?: string) => request<{ heads: number; averageWeight: number; categories: { category: string; heads: number }[] }>(`/api/rebanho/stats?farmId=${farmId}${category ? `&category=${encodeURIComponent(category)}` : ""}`),
+};

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { areaApi, farmApi, taskApi, type Area, type Farm, type ManagementTask as PersistedTask } from "@/lib/api";
+import { animalApi, areaApi, farmApi, herdStatsApi, lotApi, measurementApi, movementApi, occupationApi, type Animal, type Area, type Farm, type Lot, type ManagementTask as PersistedTask } from "@/lib/api";
+import { simulateGrazing } from "@/lib/simulator";
 
 type PersistentView = "visao" | "fazenda" | "rebanho" | "pastagens" | "simulador" | "agenda" | "aluguel";
 type DialogName = "farm" | "area" | "task" | null;
@@ -23,8 +24,12 @@ export default function Home() {
 function PersistentPastoFlux() {
   const [view, setView] = useState<PersistentView>("visao");
   const [farm, setFarm] = useState<Farm | null>(null);
+  const [farms, setFarms] = useState<Farm[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   const [tasks, setTasks] = useState<PersistedTask[]>([]);
+  const [animals, setAnimals] = useState<Animal[]>([]);
+  const [lots, setLots] = useState<Lot[]>([]);
+  const [occupations, setOccupations] = useState<{ id: number; areaId: number; lotId: number; status: string; startedAt: string; endedAt: string | null }[]>([]);
   const [dialog, setDialog] = useState<DialogName>(null);
   const [editingArea, setEditingArea] = useState<Area | null>(null);
   const [editingTask, setEditingTask] = useState<PersistedTask | null>(null);
@@ -34,18 +39,21 @@ function PersistentPastoFlux() {
   function showError(value: unknown) { setError(value instanceof Error ? value.message : "Não foi possível concluir a operação."); }
   function showNotice(value: string) { setNotice(value); window.setTimeout(() => setNotice(""), 3000); }
   function loadFarmData(selected: Farm) {
-    void Promise.all([areaApi.list(selected.id), taskApi.list(selected.id)]).then(([areaResult, taskResult]) => {
-      setAreas(areaResult.areas); setTasks(taskResult.tasks);
+    void Promise.all([areaApi.list(selected.id), taskApi.list(selected.id), animalApi.list(selected.id), lotApi.list(selected.id), occupationApi.list(selected.id)]).then(([areaResult, taskResult, animalResult, lotResult, occupationResult]) => {
+      setAreas(areaResult.areas); setTasks(taskResult.tasks); setAnimals(animalResult.animals); setLots(lotResult.lots); setOccupations(occupationResult.occupations);
     }).catch(showError);
   }
 
   useEffect(() => {
     void farmApi.list().then(({ farms: values }) => {
-      if (values[0]) {
-        const selected = values[0];
+      setFarms(values);
+      const savedId = Number(window.localStorage.getItem("pastoflux.activeFarmId"));
+      const selected = values.find((item) => item.id === savedId) ?? values[0];
+      if (selected) {
+        window.localStorage.setItem("pastoflux.activeFarmId", String(selected.id));
         setFarm(selected);
-        void Promise.all([areaApi.list(selected.id), taskApi.list(selected.id)]).then(([areaResult, taskResult]) => {
-          setAreas(areaResult.areas); setTasks(taskResult.tasks);
+        void Promise.all([areaApi.list(selected.id), taskApi.list(selected.id), animalApi.list(selected.id), lotApi.list(selected.id), occupationApi.list(selected.id)]).then(([areaResult, taskResult, animalResult, lotResult, occupationResult]) => {
+          setAreas(areaResult.areas); setTasks(taskResult.tasks); setAnimals(animalResult.animals); setLots(lotResult.lots); setOccupations(occupationResult.occupations);
         }).catch(showError);
       }
     }).catch(showError);
@@ -61,6 +69,8 @@ function PersistentPastoFlux() {
       const result = farm ? await farmApi.update(farm.id, payload) : await farmApi.create(payload);
       const saved = result.farm;
       setFarm(saved);
+      setFarms((values) => values.some((item) => item.id === saved.id) ? values.map((item) => item.id === saved.id ? saved : item) : [...values, saved]);
+      window.localStorage.setItem("pastoflux.activeFarmId", String(saved.id));
       setDialog(null);
       loadFarmData(saved);
       showNotice("Fazenda salva com sucesso.");
@@ -100,12 +110,19 @@ function PersistentPastoFlux() {
   function openArea(area?: Area) { setEditingArea(area ?? null); setError(""); setDialog("area"); }
   function openTask(task?: PersistedTask) { setEditingTask(task ?? null); setError(""); setDialog("task"); }
   const needFarm = !farm;
+  function selectFarm(value: string) {
+    const selected = farms.find((item) => item.id === Number(value));
+    if (!selected) return;
+    window.localStorage.setItem("pastoflux.activeFarmId", String(selected.id));
+    setFarm(selected);
+    loadFarmData(selected);
+  }
 
   return (
     <main className="app-shell">
       <aside className="sidebar">
         <button className="brand" onClick={() => setView("visao")} aria-label="Ir para visão geral"><span className="brand-mark"><i /><i /><i /></span><span>PASTO<span>FLUX</span></span></button>
-        <button className="farm-switcher" onClick={() => { setError(""); setDialog("farm"); }} aria-label="Cadastrar ou editar fazenda"><span className="farm-avatar">{farm?.name.slice(0, 2).toUpperCase() ?? "PF"}</span><span><small>PROPRIEDADE</small><strong>{farm?.name ?? "Cadastre sua fazenda"}</strong></span><b>⌄</b></button>
+        <div className="farm-switcher"><span className="farm-avatar">{farm?.name.slice(0, 2).toUpperCase() ?? "PF"}</span><span><small>PROPRIEDADE ATIVA</small><select value={farm?.id ?? ""} onChange={(event) => selectFarm(event.target.value)} aria-label="Selecionar fazenda">{farms.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}{!farms.length && <option value="">Cadastre sua fazenda</option>}</select></span><button type="button" onClick={() => { setError(""); setDialog("farm"); }} aria-label="Cadastrar ou editar fazenda">Editar</button></div>
         <nav aria-label="Navegação principal"><small>GESTÃO</small>{persistentNav.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav>
         <div className="sidebar-card"><span className="signal"><i /><i /><i /></span><div><strong>Dados persistentes</strong><small>{farm ? "Sincronizados no D1" : "Aguardando cadastro"}</small></div></div>
       </aside>
@@ -120,10 +137,10 @@ function PersistentPastoFlux() {
           {error && <div className="form-error" role="alert">{error}</div>}
           {view === "visao" && <OverviewPersisted farm={farm} mappedArea={mappedArea} areas={areas.length} pending={pendingTasks.length} openFarm={() => setDialog("farm")} openArea={() => openArea()} openTask={() => openTask()} />}
           {view === "fazenda" && <FarmView farm={farm} mappedArea={mappedArea} areaCount={areas.length} openFarm={() => setDialog("farm")} />}
-          {view === "pastagens" && <AreasView farm={farm} areas={areas} mappedArea={mappedArea} openArea={openArea} />}
+          {view === "pastagens" && <AreasView farm={farm} areas={areas} mappedArea={mappedArea} openArea={openArea} occupations={occupations} />}
           {view === "agenda" && <AgendaPersisted farm={farm} tasks={tasks} openTask={openTask} toggleTask={toggleTask} />}
           {view === "simulador" && <SimulatorPersisted onSchedule={() => openTask()} />}
-          {view === "rebanho" && <StaticModule eyebrow="CONTROLE DO REBANHO" title="Animais e lotes" text="O cadastro persistente de rebanho está planejado para a próxima Sprint. Os dados demonstrativos do protótipo foram preservados fora do fluxo persistente." />}
+          {view === "rebanho" && <HerdView farm={farm} areas={areas} animals={animals} lots={lots} onAnimal={(animal) => setAnimals((values) => [...values, animal])} onLot={(lot) => setLots((values) => [...values, lot])} onMovement={() => farm && loadFarmData(farm)} />}
           {view === "aluguel" && <StaticModule eyebrow="REDE DE PASTAGENS" title="Disponibilidade e aluguel" text="As ofertas de aluguel continuam demonstrativas nesta etapa. A Sprint 2 concentra a persistência em fazenda, áreas e agenda." />}
         </div>
       </section>
@@ -189,7 +206,7 @@ function FarmView({ farm, mappedArea, areaCount, openFarm }: { farm: Farm | null
   );
 }
 
-function AreasView({ farm, areas, mappedArea, openArea }: { farm: Farm | null; areas: Area[]; mappedArea: number; openArea: (area?: Area) => void }) {
+function AreasView({ farm, areas, mappedArea, openArea, occupations }: { farm: Farm | null; areas: Area[]; mappedArea: number; openArea: (area?: Area) => void; occupations: { areaId: number; lotId: number; status: string }[] }) {
   return (
     <>
       <PageHeading eyebrow="GESTÃO DE PASTAGENS" title="Áreas e pastos" text="Cada área é vinculada à fazenda ativa e permanece disponível após recarregar." action={<button className="primary big" disabled={!farm} onClick={() => openArea()}>＋ Nova área</button>} />
@@ -209,6 +226,8 @@ function AreasView({ farm, areas, mappedArea, openArea }: { farm: Farm | null; a
                 <div className="level-label"><span>Participação na fazenda</span><b>{Math.round((area.size / farm.totalArea) * 100)}%</b></div>
                 <div className="progress"><i className="good" style={{ width: `${Math.min(100, (area.size / farm.totalArea) * 100)}%` }} /></div>
                 <small>{area.notes || "Sem observações"}</small>
+                <span className="status">{occupations.find((item) => item.areaId === area.id)?.status ?? "DISPONIVEL"}</span>
+                <MeasurementForm farmId={farm.id} areaId={area.id} />
               </article>
             )) : (
               <div className="agenda-empty">
@@ -223,6 +242,57 @@ function AreasView({ farm, areas, mappedArea, openArea }: { farm: Farm | null; a
       )}
     </>
   );
+}
+
+function MeasurementForm({ farmId, areaId }: { farmId: number; areaId: number }) {
+  const [availability, setAvailability] = useState("");
+  const [message, setMessage] = useState("");
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      await measurementApi.create({ farmId, areaId, measuredAt: new Date().toISOString().slice(0, 10), availability: Number(availability), source: "manual", notes: "" });
+      setAvailability(""); setMessage("Medição registrada.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível registrar."); }
+  }
+  return <form onSubmit={submit} className="measurement-form"><label>Disponibilidade (%)<input type="number" min="0" max="100" required value={availability} onChange={(event) => setAvailability(event.target.value)} /></label><button type="submit">Registrar</button>{message && <small role="status">{message}</small>}</form>;
+}
+
+function HerdView({ farm, areas, animals, lots, onAnimal, onLot, onMovement }: { farm: Farm | null; areas: Area[]; animals: Animal[]; lots: Lot[]; onAnimal: (animal: Animal) => void; onLot: (lot: Lot) => void; onMovement: () => void }) {
+  const [identification, setIdentification] = useState("");
+  const [category, setCategory] = useState("Gado");
+  const [lotName, setLotName] = useState("");
+  const [lotId, setLotId] = useState("");
+  const [originAreaId, setOriginAreaId] = useState("");
+  const [destinationAreaId, setDestinationAreaId] = useState("");
+  const [message, setMessage] = useState("");
+  const [stats, setStats] = useState<{ heads: number; averageWeight: number; categories: { category: string; heads: number }[] } | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState("");
+  useEffect(() => {
+    if (farm) void herdStatsApi.get(farm.id, categoryFilter || undefined).then(setStats).catch((error) => setMessage(error instanceof Error ? error.message : "Não foi possível carregar indicadores."));
+  }, [farm, categoryFilter]);
+  if (!farm) return <div className="agenda-empty"><strong>Cadastre a fazenda primeiro</strong></div>;
+  async function addAnimal(event: React.FormEvent) {
+    event.preventDefault();
+    try { const { animal } = await animalApi.create({ farmId: farm.id, identification, category, weight: null, birthDate: null, active: true }); onAnimal(animal); setIdentification(""); setMessage("Animal cadastrado."); } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar."); }
+  }
+  async function addLot(event: React.FormEvent) {
+    event.preventDefault();
+    try { const { lot } = await lotApi.create({ farmId: farm.id, name: lotName }); onLot(lot); setLotName(""); setMessage("Lote cadastrado."); } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar."); }
+  }
+  async function moveLot(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      await movementApi.create({ farmId: farm.id, lotId: Number(lotId), origin: areas.find((item) => item.id === Number(originAreaId))?.name ?? null, destination: areas.find((item) => item.id === Number(destinationAreaId))?.name ?? "", originAreaId: originAreaId ? Number(originAreaId) : null, destinationAreaId: Number(destinationAreaId), movedAt: new Date().toISOString().slice(0, 10), quantity: animals.length, recoveryDays: 0 });
+      setMessage("Movimentação registrada."); onMovement();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível movimentar o lote."); }
+  }
+  return <><PageHeading eyebrow="CONTROLE DO REBANHO" title="Animais e lotes" text="Cadastre o rebanho persistente e organize os animais por lote." />
+    <section className="panel"><form onSubmit={addAnimal} className="form-grid"><label>Identificação<input required value={identification} onChange={(event) => setIdentification(event.target.value)} /></label><label>Categoria<input required value={category} onChange={(event) => setCategory(event.target.value)} /></label><button className="primary" type="submit">Cadastrar animal</button></form>
+    <form onSubmit={addLot} className="form-grid"><label>Nome do lote<input required value={lotName} onChange={(event) => setLotName(event.target.value)} /></label><button className="primary" type="submit">Cadastrar lote</button></form>{message && <p role="status">{message}</p>}
+    <form onSubmit={moveLot} className="form-grid"><label>Lote<select required value={lotId} onChange={(event) => setLotId(event.target.value)}><option value="">Selecione</option>{lots.map((lot) => <option key={lot.id} value={lot.id}>{lot.name}</option>)}</select></label><label>Origem<select value={originAreaId} onChange={(event) => setOriginAreaId(event.target.value)}><option value="">Sem origem</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label><label>Destino<select required value={destinationAreaId} onChange={(event) => setDestinationAreaId(event.target.value)}><option value="">Selecione</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label><button className="primary" type="submit">Movimentar lote</button></form>
+    <div className="summary-strip"><span><small>ANIMAIS ATIVOS</small><strong>{stats?.heads ?? animals.filter((animal) => animal.active).length}</strong></span><span><small>PESO MÉDIO</small><strong>{Number(stats?.averageWeight ?? 0).toFixed(1)} kg</strong></span><span><small>LOTES</small><strong>{lots.length}</strong></span></div>
+    <label>Filtrar categoria<select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="">Todas</option>{Array.from(new Set(animals.map((animal) => animal.category))).map((item) => <option key={item}>{item}</option>)}</select></label>
+    <ul>{animals.map((animal) => <li key={animal.id}>{animal.identification} · {animal.category}</li>)}</ul></section></>;
 }
 
 function AgendaPersisted({ farm, tasks, openTask, toggleTask }: { farm: Farm | null; tasks: PersistedTask[]; openTask: (task?: PersistedTask) => void; toggleTask: (task: PersistedTask) => void }) {
@@ -276,7 +346,7 @@ function SimulatorPersisted({ onSchedule }: { onSchedule: () => void }) {
   const [animals, setAnimals] = useState(48);
   const [area, setArea] = useState(24);
   const [availability, setAvailability] = useState(18);
-  const days = Math.max(1, Math.round((area * 8 * (availability / 100)) / Math.max(animals, 1)));
+  const days = simulateGrazing({ animals, area, availability });
 
   return (
     <>
