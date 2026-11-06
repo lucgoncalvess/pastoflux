@@ -17,6 +17,12 @@ export type Animal = { id: number; farmId: number; identification: string; categ
 export type Lot = { id: number; farmId: number; name: string };
 export type Movement = { id: number; farmId: number; lotId: number; origin: string | null; destination: string; originAreaId: number | null; destinationAreaId: number; movedAt: string; quantity: number; recoveryDays: number };
 export type PastureMeasurement = { id: number; farmId: number; areaId: number; measuredAt: string; availability: number; source: string; notes: string };
+export type RentalOffer = {
+  id: number; farmId: number; areaId: number; region: string; areaName: string; areaSize: number;
+  capacityNovilho: number; capacityMedio: number; capacityGrande: number;
+  monthlyRateNovilho: number; monthlyRateMedio: number; monthlyRateGrande: number;
+  description: string; status: "published" | "closed";
+};
 
 /**
  * Cliente HTTP genérico com tratamento de erros da API.
@@ -84,4 +90,31 @@ export const measurementApi = {
 };
 export const herdStatsApi = {
   get: (farmId: number, category?: string) => request<{ heads: number; averageWeight: number; categories: { category: string; heads: number }[] }>(`/api/rebanho/stats?farmId=${farmId}${category ? `&category=${encodeURIComponent(category)}` : ""}`),
+};
+export const rentalApi = {
+  list: (region?: string, minCapacity?: number, farmId?: number) => {
+    const params = new URLSearchParams();
+    if (region) params.set("region", region);
+    if (minCapacity !== undefined) params.set("minCapacity", String(minCapacity));
+    if (farmId !== undefined) params.set("farmId", String(farmId));
+    const query = params.toString();
+    return request<{ offers: RentalOffer[] }>(`/api/rental-offers${query ? `?${query}` : ""}`);
+  },
+  create: (payload: {
+    farmId: number; areaId: number; region: string;
+    capacityNovilho: number; capacityMedio: number; capacityGrande: number;
+    monthlyRateNovilho: number; monthlyRateMedio: number; monthlyRateGrande: number;
+    contact: string; description: string;
+  }) =>
+    request<{ offer: RentalOffer & { contact: string } }>("/api/rental-offers", { method: "POST", body: JSON.stringify(payload) }),
+  update: (offerId: number, payload: {
+    region: string; capacityNovilho: number; capacityMedio: number; capacityGrande: number;
+    monthlyRateNovilho: number; monthlyRateMedio: number; monthlyRateGrande: number;
+    contact: string; description: string;
+  }) =>
+    request<{ offer: RentalOffer }>(`/api/rental-offers/${offerId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  requestContact: (offerId: number) =>
+    request<{ contact: string }>(`/api/rental-offers/${offerId}/contact`, { method: "POST" }),
+  close: (offerId: number) =>
+    request<{ offer: RentalOffer }>(`/api/rental-offers/${offerId}`, { method: "DELETE" }),
 };

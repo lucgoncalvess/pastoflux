@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { animalApi, areaApi, farmApi, herdStatsApi, lotApi, measurementApi, movementApi, occupationApi, type Animal, type Area, type Farm, type Lot, type ManagementTask as PersistedTask } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { animalApi, areaApi, farmApi, herdStatsApi, lotApi, measurementApi, movementApi, occupationApi, rentalApi, taskApi, type Animal, type Area, type Farm, type Lot, type ManagementTask as PersistedTask, type RentalOffer } from "@/lib/api";
 import { simulateGrazing } from "@/lib/simulator";
 
 type PersistentView = "visao" | "fazenda" | "rebanho" | "pastagens" | "simulador" | "agenda" | "aluguel";
@@ -36,8 +36,8 @@ function PersistentPastoFlux() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  function showError(value: unknown) { setError(value instanceof Error ? value.message : "Não foi possível concluir a operação."); }
-  function showNotice(value: string) { setNotice(value); window.setTimeout(() => setNotice(""), 3000); }
+  const showError = useCallback((value: unknown) => { setError(value instanceof Error ? value.message : "Não foi possível concluir a operação."); }, []);
+  const showNotice = useCallback((value: string) => { setNotice(value); window.setTimeout(() => setNotice(""), 3000); }, []);
   function loadFarmData(selected: Farm) {
     void Promise.all([areaApi.list(selected.id), taskApi.list(selected.id), animalApi.list(selected.id), lotApi.list(selected.id), occupationApi.list(selected.id)]).then(([areaResult, taskResult, animalResult, lotResult, occupationResult]) => {
       setAreas(areaResult.areas); setTasks(taskResult.tasks); setAnimals(animalResult.animals); setLots(lotResult.lots); setOccupations(occupationResult.occupations);
@@ -57,7 +57,7 @@ function PersistentPastoFlux() {
         }).catch(showError);
       }
     }).catch(showError);
-  }, []);
+  }, [showError]);
 
   const mappedArea = areas.reduce((total, area) => total + Number(area.size), 0);
   const pendingTasks = tasks.filter((task) => task.status === "pending");
@@ -141,7 +141,7 @@ function PersistentPastoFlux() {
           {view === "agenda" && <AgendaPersisted farm={farm} tasks={tasks} openTask={openTask} toggleTask={toggleTask} />}
           {view === "simulador" && <SimulatorPersisted onSchedule={() => openTask()} />}
           {view === "rebanho" && <HerdView farm={farm} areas={areas} animals={animals} lots={lots} onAnimal={(animal) => setAnimals((values) => [...values, animal])} onLot={(lot) => setLots((values) => [...values, lot])} onMovement={() => farm && loadFarmData(farm)} />}
-          {view === "aluguel" && <StaticModule eyebrow="REDE DE PASTAGENS" title="Disponibilidade e aluguel" text="As ofertas de aluguel continuam demonstrativas nesta etapa. A Sprint 2 concentra a persistência em fazenda, áreas e agenda." />}
+          {view === "aluguel" && <RentalView farm={farm} areas={areas} showNotice={showNotice} showError={showError} />}
         </div>
       </section>
       {dialog === "farm" && <FarmDialog farm={farm} onClose={() => setDialog(null)} onSave={saveFarm} error={error} />}
@@ -271,18 +271,19 @@ function HerdView({ farm, areas, animals, lots, onAnimal, onLot, onMovement }: {
     if (farm) void herdStatsApi.get(farm.id, categoryFilter || undefined).then(setStats).catch((error) => setMessage(error instanceof Error ? error.message : "Não foi possível carregar indicadores."));
   }, [farm, categoryFilter]);
   if (!farm) return <div className="agenda-empty"><strong>Cadastre a fazenda primeiro</strong></div>;
+  const activeFarm = farm;
   async function addAnimal(event: React.FormEvent) {
     event.preventDefault();
-    try { const { animal } = await animalApi.create({ farmId: farm.id, identification, category, weight: null, birthDate: null, active: true }); onAnimal(animal); setIdentification(""); setMessage("Animal cadastrado."); } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar."); }
+    try { const { animal } = await animalApi.create({ farmId: activeFarm.id, identification, category, weight: null, birthDate: null, active: true }); onAnimal(animal); setIdentification(""); setMessage("Animal cadastrado."); } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar."); }
   }
   async function addLot(event: React.FormEvent) {
     event.preventDefault();
-    try { const { lot } = await lotApi.create({ farmId: farm.id, name: lotName }); onLot(lot); setLotName(""); setMessage("Lote cadastrado."); } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar."); }
+    try { const { lot } = await lotApi.create({ farmId: activeFarm.id, name: lotName }); onLot(lot); setLotName(""); setMessage("Lote cadastrado."); } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar."); }
   }
   async function moveLot(event: React.FormEvent) {
     event.preventDefault();
     try {
-      await movementApi.create({ farmId: farm.id, lotId: Number(lotId), origin: areas.find((item) => item.id === Number(originAreaId))?.name ?? null, destination: areas.find((item) => item.id === Number(destinationAreaId))?.name ?? "", originAreaId: originAreaId ? Number(originAreaId) : null, destinationAreaId: Number(destinationAreaId), movedAt: new Date().toISOString().slice(0, 10), quantity: animals.length, recoveryDays: 0 });
+      await movementApi.create({ farmId: activeFarm.id, lotId: Number(lotId), origin: areas.find((item) => item.id === Number(originAreaId))?.name ?? null, destination: areas.find((item) => item.id === Number(destinationAreaId))?.name ?? "", originAreaId: originAreaId ? Number(originAreaId) : null, destinationAreaId: Number(destinationAreaId), movedAt: new Date().toISOString().slice(0, 10), quantity: animals.length, recoveryDays: 0 });
       setMessage("Movimentação registrada."); onMovement();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível movimentar o lote."); }
   }
@@ -370,14 +371,129 @@ function SimulatorPersisted({ onSchedule }: { onSchedule: () => void }) {
   );
 }
 
-function StaticModule({ eyebrow, title, text }: { eyebrow: string; title: string; text: string }) {
+function RentalView({ farm, areas, showNotice, showError }: { farm: Farm | null; areas: Area[]; showNotice: (message: string) => void; showError: (error: unknown) => void }) {
+  const [offers, setOffers] = useState<RentalOffer[]>([]);
+  const [ownerOffers, setOwnerOffers] = useState<RentalOffer[]>([]);
+  const [editingOfferId, setEditingOfferId] = useState<number | null>(null);
+  const [region, setRegion] = useState("");
+  const [minCapacity, setMinCapacity] = useState("");
+  const [areaId, setAreaId] = useState("");
+  const [message, setMessage] = useState("");
+  const [form, setForm] = useState({
+    region: "", capacityNovilho: "10", capacityMedio: "10", capacityGrande: "5",
+    monthlyRateNovilho: "", monthlyRateMedio: "", monthlyRateGrande: "", contact: "", description: "",
+  });
+
+  const loadOffers = useCallback(async () => {
+    try {
+      const result = await rentalApi.list(region || undefined, minCapacity ? Number(minCapacity) : undefined);
+      setOffers(result.offers);
+    } catch (error) { showError(error); }
+  }, [region, minCapacity, showError]);
+  const loadOwnerOffers = useCallback(async () => {
+    if (!farm) {
+      setOwnerOffers([]);
+      return;
+    }
+    try {
+      const result = await rentalApi.list(undefined, undefined, farm.id);
+      setOwnerOffers(result.offers);
+    } catch (error) { showError(error); }
+  }, [farm, showError]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadOffers(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadOffers]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadOwnerOffers(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadOwnerOffers]);
+
+  async function publish(event: React.FormEvent) {
+    event.preventDefault();
+    if (!farm) return;
+    try {
+      const payload = {
+        capacityNovilho: Number(form.capacityNovilho), capacityMedio: Number(form.capacityMedio), capacityGrande: Number(form.capacityGrande),
+        monthlyRateNovilho: Number(form.monthlyRateNovilho), monthlyRateMedio: Number(form.monthlyRateMedio), monthlyRateGrande: Number(form.monthlyRateGrande),
+      };
+      if (editingOfferId) {
+        await rentalApi.update(editingOfferId, { ...payload, region: form.region, contact: form.contact, description: form.description });
+        setMessage("Oferta atualizada.");
+        showNotice("Oferta de aluguel atualizada.");
+      } else {
+        await rentalApi.create({ farmId: farm.id, areaId: Number(areaId), ...payload, region: form.region, contact: form.contact, description: form.description });
+        setMessage("Oferta publicada.");
+        showNotice("Oferta de aluguel publicada.");
+      }
+      setEditingOfferId(null);
+      setForm((value) => ({ ...value, contact: "", description: "" }));
+      await Promise.all([loadOffers(), loadOwnerOffers()]);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível publicar."); }
+  }
+
+  async function requestContact(offerId: number) {
+    try {
+      const result = await rentalApi.requestContact(offerId);
+      setMessage(`Contato liberado: ${result.contact}`);
+    } catch (error) { showError(error); }
+  }
+
+  async function closeOffer(offerId: number) {
+    try {
+      await rentalApi.close(offerId);
+      showNotice("Oferta encerrada.");
+      await Promise.all([loadOffers(), loadOwnerOffers()]);
+    } catch (error) { showError(error); }
+  }
+
+  function editOffer(offer: RentalOffer) {
+    setEditingOfferId(offer.id);
+    setAreaId(String(offer.areaId));
+    setForm({
+      region: offer.region,
+      capacityNovilho: String(offer.capacityNovilho),
+      capacityMedio: String(offer.capacityMedio),
+      capacityGrande: String(offer.capacityGrande),
+      monthlyRateNovilho: String(offer.monthlyRateNovilho),
+      monthlyRateMedio: String(offer.monthlyRateMedio),
+      monthlyRateGrande: String(offer.monthlyRateGrande),
+      contact: "",
+      description: offer.description,
+    });
+    setMessage("Informe novamente o contato para salvar a oferta.");
+  }
+
+  const update = (key: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm((value) => ({ ...value, [key]: event.target.value }));
   return (
     <>
-      <PageHeading eyebrow={eyebrow} title={title} text={text} />
-      <div className="agenda-empty">
-        <strong>Módulo demonstrativo preservado</strong>
-        <p>{text}</p>
-      </div>
+      <PageHeading eyebrow="REDE DE PASTAGENS" title="Aluguel por cabeça de gado" text="O proprietário define a lotação e o valor mensal por cabeça conforme a faixa de peso." />
+      {farm && <section className="panel">
+        <h2>{editingOfferId ? "Editar oferta de aluguel" : "Publicar área para aluguel"}</h2>
+        <form onSubmit={publish} className="form-grid">
+          <label>Área<select required value={areaId} onChange={(event) => setAreaId(event.target.value)}><option value="">Selecione uma área livre</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.name} · {area.size} ha</option>)}</select></label>
+          <label>Região<input required value={form.region} onChange={update("region")} placeholder="Ex.: Sul de Minas" /></label>
+          <label>Novilhos (&lt;150 kg) — cabeças<input required type="number" min="1" value={form.capacityNovilho} onChange={update("capacityNovilho")} /></label>
+          <label>Médios (150–300 kg) — cabeças<input required type="number" min="1" value={form.capacityMedio} onChange={update("capacityMedio")} /></label>
+          <label>Grandes (&gt;300 kg) — cabeças<input required type="number" min="1" value={form.capacityGrande} onChange={update("capacityGrande")} /></label>
+          <label>R$/cabeça/mês — novilho<input required type="number" min="0.01" step="0.01" value={form.monthlyRateNovilho} onChange={update("monthlyRateNovilho")} /></label>
+          <label>R$/cabeça/mês — médio<input required type="number" min="0.01" step="0.01" value={form.monthlyRateMedio} onChange={update("monthlyRateMedio")} /></label>
+          <label>R$/cabeça/mês — grande<input required type="number" min="0.01" step="0.01" value={form.monthlyRateGrande} onChange={update("monthlyRateGrande")} /></label>
+          <label>Contato protegido<input required value={form.contact} onChange={update("contact")} placeholder="Telefone ou e-mail" /></label>
+          <label className="wide">Condições e descrição<textarea value={form.description} onChange={update("description")} placeholder="Cercas, água, manejo, período mínimo e outras condições" /></label>
+          <button className="primary" type="submit">{editingOfferId ? "Salvar alterações" : "Publicar oferta"}</button>
+          {editingOfferId && <button type="button" onClick={() => setEditingOfferId(null)}>Cancelar edição</button>}
+        </form>
+        {message && <p role="status">{message}</p>}
+      </section>}
+      {farm && <section className="panel">
+        <div className="panel-heading"><div><h2>Minhas ofertas</h2><p>Gerencie as ofertas publicadas na fazenda ativa.</p></div></div>
+        {ownerOffers.length ? <div className="agenda-list">{ownerOffers.map((offer) => <article className="agenda-item" key={offer.id}><div className="agenda-copy"><span className="status good">Publicada</span><h2>{offer.areaName} · {offer.areaSize} ha</h2><p>{offer.region} · {offer.capacityNovilho + offer.capacityMedio + offer.capacityGrande} cabeças totais</p></div><div className="task-actions"><button onClick={() => editOffer(offer)}>Editar</button><button onClick={() => closeOffer(offer.id)}>Encerrar oferta</button></div></article>)}</div> : <div className="agenda-empty"><strong>Nenhuma oferta publicada</strong><p>Cadastre uma oferta acima para começar.</p></div>}
+      </section>}
+      <section className="panel">
+        <div className="panel-heading"><div><h2>Ofertas disponíveis</h2><p>O contato só aparece após a solicitação formal.</p></div><div className="form-grid"><input aria-label="Filtrar por região" placeholder="Região" value={region} onChange={(event) => setRegion(event.target.value)} /><input aria-label="Capacidade mínima" type="number" min="0" placeholder="Cabeças mín." value={minCapacity} onChange={(event) => setMinCapacity(event.target.value)} /></div></div>
+        {offers.length ? <div className="agenda-list">{offers.map((offer) => <article className="agenda-item" key={offer.id}><div className="agenda-copy"><span className="status good">{offer.region}</span><h2>{offer.areaName} · {offer.areaSize} ha</h2><p>Lotação: {offer.capacityNovilho} novilhos · {offer.capacityMedio} médios · {offer.capacityGrande} grandes</p><p>Mensal: R$ {offer.monthlyRateNovilho.toFixed(2)} / R$ {offer.monthlyRateMedio.toFixed(2)} / R$ {offer.monthlyRateGrande.toFixed(2)} por cabeça</p><p>{offer.description || "Sem condições adicionais informadas."}</p></div><div className="task-actions"><button className="primary" onClick={() => requestContact(offer.id)}>Solicitar contato</button></div></article>)}</div> : <div className="agenda-empty"><strong>Nenhuma oferta encontrada</strong><p>Ajuste os filtros ou publique uma área livre.</p></div>}
+      </section>
     </>
   );
 }

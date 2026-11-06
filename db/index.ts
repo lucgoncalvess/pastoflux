@@ -60,6 +60,35 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS "occupations" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "farm_id" integer NOT NULL, "area_id" integer NOT NULL, "lot_id" integer NOT NULL, "started_at" text NOT NULL, "ended_at" text, "recovery_days" integer DEFAULT 0 NOT NULL, "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL, FOREIGN KEY ("farm_id") REFERENCES "farms"("id") ON DELETE cascade, FOREIGN KEY ("area_id") REFERENCES "areas"("id") ON DELETE cascade, FOREIGN KEY ("lot_id") REFERENCES "lots"("id") ON DELETE cascade)`,
   `CREATE INDEX IF NOT EXISTS "occupations_area_dates_idx" ON "occupations" ("area_id", "started_at", "ended_at")`,
   `CREATE INDEX IF NOT EXISTS "occupations_farm_idx" ON "occupations" ("farm_id")`,
+  `CREATE TABLE IF NOT EXISTS "rental_offers" (
+    "id" integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+    "farm_id" integer NOT NULL,
+    "area_id" integer NOT NULL,
+    "region" text NOT NULL,
+    "capacity_novilho" integer NOT NULL,
+    "capacity_medio" integer NOT NULL,
+    "capacity_grande" integer NOT NULL,
+    "monthly_rate_novilho" real NOT NULL,
+    "monthly_rate_medio" real NOT NULL,
+    "monthly_rate_grande" real NOT NULL,
+    "contact" text NOT NULL,
+    "description" text DEFAULT '' NOT NULL,
+    "status" text DEFAULT 'published' NOT NULL,
+    "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    FOREIGN KEY ("farm_id") REFERENCES "farms"("id") ON DELETE cascade,
+    FOREIGN KEY ("area_id") REFERENCES "areas"("id") ON DELETE cascade
+  )`,
+  `CREATE INDEX IF NOT EXISTS "rental_offers_search_idx" ON "rental_offers" ("status", "region", "capacity_medio")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "rental_offers_area_active_idx" ON "rental_offers" ("area_id", "status")`,
+  `CREATE TABLE IF NOT EXISTS "rental_contact_requests" (
+    "id" integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+    "offer_id" integer NOT NULL,
+    "requester_id" text NOT NULL,
+    "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    FOREIGN KEY ("offer_id") REFERENCES "rental_offers"("id") ON DELETE cascade
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "rental_contact_requests_offer_requester_idx" ON "rental_contact_requests" ("offer_id", "requester_id")`,
 ];
 
 let initPromise: Promise<void> | null = null;

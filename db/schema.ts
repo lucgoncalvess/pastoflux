@@ -159,3 +159,33 @@ export const tasks = sqliteTable("tasks", {
   index("tasks_farm_id_idx").on(table.farmId),
   index("tasks_farm_status_due_date_idx").on(table.farmId, table.status, table.dueDate),
 ]);
+
+export const rentalOffers = sqliteTable("rental_offers", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  farmId: integer("farm_id").notNull().references(() => farms.id, { onDelete: "cascade" }),
+  areaId: integer("area_id").notNull().references(() => areas.id, { onDelete: "cascade" }),
+  region: text("region").notNull(),
+  capacityNovilho: integer("capacity_novilho").notNull(),
+  capacityMedio: integer("capacity_medio").notNull(),
+  capacityGrande: integer("capacity_grande").notNull(),
+  monthlyRateNovilho: real("monthly_rate_novilho").notNull(),
+  monthlyRateMedio: real("monthly_rate_medio").notNull(),
+  monthlyRateGrande: real("monthly_rate_grande").notNull(),
+  contact: text("contact").notNull(),
+  description: text("description").notNull().default(""),
+  status: text("status", { enum: ["published", "closed"] }).notNull().default("published"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("rental_offers_search_idx").on(table.status, table.region, table.capacityMedio),
+  uniqueIndex("rental_offers_area_active_idx").on(table.areaId, table.status),
+]);
+
+export const rentalContactRequests = sqliteTable("rental_contact_requests", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  offerId: integer("offer_id").notNull().references(() => rentalOffers.id, { onDelete: "cascade" }),
+  requesterId: text("requester_id").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("rental_contact_requests_offer_requester_idx").on(table.offerId, table.requesterId),
+]);

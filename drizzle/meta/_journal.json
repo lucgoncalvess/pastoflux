@@ -22,6 +22,20 @@
       "when": 1792783366825,
       "tag": "0002_lush_blackheart",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793971228865,
+      "tag": "0003_parallel_romulus",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793972413772,
+      "tag": "0004_rental-pricing-capacity",
+      "breakpoints": true
     }
   ]
 }

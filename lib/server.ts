@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { animalLots, animals, areas, auditLogs, farms, lots, movements, occupations, pastureMeasurements, tasks, userFarms } from "@/db/schema";
-import { areaWarning, parseAnimal, parseArea, parseFarm, parseLot, parseMeasurement, parseMovement, parseTask } from "@/lib/domain-validation";
+import { animalLots, animals, areas, auditLogs, farms, lots, movements, occupations, pastureMeasurements, rentalContactRequests, rentalOffers, tasks, userFarms } from "@/db/schema";
+import { areaWarning, parseAnimal, parseArea, parseFarm, parseLot, parseMeasurement, parseMovement, parseRentalOffer, parseTask } from "@/lib/domain-validation";
 
 /**
  * Utilitário para padronização de respostas de erro da API.
@@ -330,4 +330,93 @@ export async function listTasks(request: Request, farmId: number) {
   await requireFarmAccess(request, farmId);
   const db = await getDb();
   return db.select().from(tasks).where(eq(tasks.farmId, farmId)).orderBy(asc(tasks.dueDate), asc(tasks.id));
+}
+
+export async function listRentalOffers(request: Request) {
+  const params = new URL(request.url).searchParams;
+  const region = params.get("region")?.trim();
+  const farmId = params.get("farmId") ? Number(params.get("farmId")) : null;
+  const minimumCapacity = params.get("minCapacity") ? Number(params.get("minCapacity")) : null;
+  if (farmId !== null && (!Number.isInteger(farmId) || farmId < 1)) throw new Error("Fazenda inválida.");
+  if (minimumCapacity !== null && (!Number.isInteger(minimumCapacity) || minimumCapacity < 0)) throw new Error("Capacidade mínima inválida.");
+  const filters = [eq(rentalOffers.status, "published")];
+  if (farmId !== null) {
+    await requireFarmAccess(request, farmId);
+    filters.push(eq(rentalOffers.farmId, farmId));
+  }
+  if (region) filters.push(eq(rentalOffers.region, region));
+  if (minimumCapacity !== null) filters.push(sql`(${rentalOffers.capacityNovilho} + ${rentalOffers.capacityMedio} + ${rentalOffers.capacityGrande}) >= ${minimumCapacity}`);
+  const db = await getDb();
+  return db.select({
+    id: rentalOffers.id,
+    farmId: rentalOffers.farmId,
+    areaId: rentalOffers.areaId,
+    region: rentalOffers.region,
+    capacityNovilho: rentalOffers.capacityNovilho,
+    capacityMedio: rentalOffers.capacityMedio,
+    capacityGrande: rentalOffers.capacityGrande,
+    monthlyRateNovilho: rentalOffers.monthlyRateNovilho,
+    monthlyRateMedio: rentalOffers.monthlyRateMedio,
+    monthlyRateGrande: rentalOffers.monthlyRateGrande,
+    description: rentalOffers.description,
+    status: rentalOffers.status,
+    areaName: areas.name,
+    areaSize: areas.size,
+  }).from(rentalOffers).innerJoin(areas, eq(areas.id, rentalOffers.areaId)).where(and(...filters)).orderBy(asc(rentalOffers.createdAt));
+}
+
+export async function createRentalOffer(request: Request) {
+  actorFromRequest(request);
+  const payload = await request.json();
+  const farmId = Number(payload.farmId);
+  const areaId = Number(payload.areaId);
+  await requireFarmAccess(request, farmId, true);
+  await farmForId(farmId);
+  const db = await getDb();
+  const [area] = await db.select().from(areas).where(and(eq(areas.id, areaId), eq(areas.farmId, farmId)));
+  if (!area) throw new Error("Área não encontrada.");
+  const today = new Date().toISOString().slice(0, 10);
+  const occupationsForArea = await db.select().from(occupations).where(and(eq(occupations.areaId, areaId), eq(occupations.farmId, farmId)));
+  const hasScheduledOccupation = occupationsForArea.some((occupation) => {
+    const end = occupation.endedAt ?? "9999-12-31";
+    return end >= today;
+  });
+  if (hasScheduledOccupation) throw new Error("A área possui ocupação ativa ou agendada e não pode ser publicada.");
+  const [existingOffer] = await db.select({ id: rentalOffers.id }).from(rentalOffers).where(and(eq(rentalOffers.areaId, areaId), eq(rentalOffers.status, "published")));
+  if (existingOffer) throw new Error("A área já possui uma oferta publicada.");
+  const values = parseRentalOffer(payload);
+  const [offer] = await db.insert(rentalOffers).values({ ...values, farmId, areaId }).returning();
+  await audit(request, farmId, "create", "rental_offer", offer.id);
+  return Response.json({ offer: { ...offer, areaName: area.name, areaSize: area.size } }, { status: 201 });
+}
+
+export async function updateRentalOffer(request: Request, offerId: number) {
+  const payload = await request.json();
+  const db = await getDb();
+  const [current] = await db.select().from(rentalOffers).where(eq(rentalOffers.id, offerId));
+  if (!current) throw new Error("Oferta não encontrada.");
+  await requireFarmAccess(request, current.farmId, true);
+  const values = parseRentalOffer(payload);
+  const [offer] = await db.update(rentalOffers).set({ ...values, updatedAt: new Date().toISOString() }).where(eq(rentalOffers.id, offerId)).returning();
+  await audit(request, current.farmId, "update", "rental_offer", offerId);
+  return Response.json({ offer });
+}
+
+export async function closeRentalOffer(request: Request, offerId: number) {
+  const db = await getDb();
+  const [current] = await db.select().from(rentalOffers).where(eq(rentalOffers.id, offerId));
+  if (!current) throw new Error("Oferta não encontrada.");
+  await requireFarmAccess(request, current.farmId, true);
+  const [offer] = await db.update(rentalOffers).set({ status: "closed", updatedAt: new Date().toISOString() }).where(eq(rentalOffers.id, offerId)).returning();
+  await audit(request, current.farmId, "close", "rental_offer", offerId);
+  return Response.json({ offer });
+}
+
+export async function requestRentalContact(request: Request, offerId: number) {
+  const requesterId = actorFromRequest(request);
+  const db = await getDb();
+  const [offer] = await db.select().from(rentalOffers).where(and(eq(rentalOffers.id, offerId), eq(rentalOffers.status, "published")));
+  if (!offer) throw new Error("Oferta não encontrada.");
+  await db.insert(rentalContactRequests).values({ offerId, requesterId }).onConflictDoNothing();
+  return Response.json({ contact: offer.contact });
 }

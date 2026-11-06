@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { areaWarning, parseAnimal, parseArea, parseFarm, parseMeasurement, parseTask } from "../lib/domain-validation.js";
+import { areaWarning, parseAnimal, parseArea, parseFarm, parseMeasurement, parseRentalOffer, parseTask } from "../lib/domain-validation.js";
 import { simulateGrazing } from "../lib/simulator.js";
 
 test("validates persistent farm, area and task payloads", () => {
@@ -24,6 +24,31 @@ test("validates Sprint 3 herd, pasture and simulator rules", () => {
   assert.throws(() => parseMeasurement({ measuredAt: "2026-10-23", availability: 101, source: "manual" }), /entre 0 e 100/);
   assert.equal(simulateGrazing({ animals: 48, area: 24, availability: 18 }), 1);
   assert.throws(() => simulateGrazing({ animals: 0, area: 24, availability: 18 }), /válidos/);
+});
+
+test("validates Sprint 4 rental offer payloads", () => {
+  assert.deepEqual(parseRentalOffer({
+    region: "Sul de Minas",
+    capacityNovilho: "20",
+    capacityMedio: "40",
+    capacityGrande: "20",
+    monthlyRateNovilho: "55",
+    monthlyRateMedio: "75.50",
+    monthlyRateGrande: "95",
+    contact: "owner@example.com",
+    description: "Pasto cercado",
+  }), {
+    region: "Sul de Minas",
+    capacityNovilho: 20,
+    capacityMedio: 40,
+    capacityGrande: 20,
+    monthlyRateNovilho: 55,
+    monthlyRateMedio: 75.5,
+    monthlyRateGrande: 95,
+    contact: "owner@example.com",
+    description: "Pasto cercado",
+  });
+  assert.throws(() => parseRentalOffer({ region: "Sul", capacityNovilho: 0, capacityMedio: 1, capacityGrande: 1, monthlyRateNovilho: 100, monthlyRateMedio: 100, monthlyRateGrande: 100, contact: "x" }), /Capacidade/);
 });
 
 async function render(path = "/") {
