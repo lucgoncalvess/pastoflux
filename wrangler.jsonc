@@ -1,0 +1,16 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "pastoflux",
+	"main": "worker/index.ts",
+	"compatibility_date": "2026-11-11",
+	"compatibility_flags": ["nodejs_compat"],
+	"workers_dev": true,
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "pastoflux-production",
+			"database_id": "72db05d3-28b6-42c8-b646-f95e2b0e96ab",
+			"migrations_dir": "drizzle"
+		}
+	]
+}

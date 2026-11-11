@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { animalApi, areaApi, farmApi, herdStatsApi, lotApi, measurementApi, movementApi, occupationApi, rentalApi, taskApi, type Animal, type Area, type Farm, type Lot, type ManagementTask as PersistedTask, type RentalOffer } from "@/lib/api";
+import { alertApi, animalApi, areaApi, farmApi, herdStatsApi, lotApi, measurementApi, movementApi, occupationApi, rentalApi, taskApi, type Animal, type Area, type Farm, type FarmAlert, type Lot, type ManagementTask as PersistedTask, type RentalOffer } from "@/lib/api";
 import { simulateGrazing } from "@/lib/simulator";
 
 type PersistentView = "visao" | "fazenda" | "rebanho" | "pastagens" | "simulador" | "agenda" | "aluguel";
@@ -30,6 +30,7 @@ function PersistentPastoFlux() {
   const [animals, setAnimals] = useState<Animal[]>([]);
   const [lots, setLots] = useState<Lot[]>([]);
   const [occupations, setOccupations] = useState<{ id: number; areaId: number; lotId: number; status: string; startedAt: string; endedAt: string | null }[]>([]);
+  const [alerts, setAlerts] = useState<FarmAlert[]>([]);
   const [dialog, setDialog] = useState<DialogName>(null);
   const [editingArea, setEditingArea] = useState<Area | null>(null);
   const [editingTask, setEditingTask] = useState<PersistedTask | null>(null);
@@ -39,8 +40,8 @@ function PersistentPastoFlux() {
   const showError = useCallback((value: unknown) => { setError(value instanceof Error ? value.message : "Não foi possível concluir a operação."); }, []);
   const showNotice = useCallback((value: string) => { setNotice(value); window.setTimeout(() => setNotice(""), 3000); }, []);
   function loadFarmData(selected: Farm) {
-    void Promise.all([areaApi.list(selected.id), taskApi.list(selected.id), animalApi.list(selected.id), lotApi.list(selected.id), occupationApi.list(selected.id)]).then(([areaResult, taskResult, animalResult, lotResult, occupationResult]) => {
-      setAreas(areaResult.areas); setTasks(taskResult.tasks); setAnimals(animalResult.animals); setLots(lotResult.lots); setOccupations(occupationResult.occupations);
+    void Promise.all([areaApi.list(selected.id), taskApi.list(selected.id), animalApi.list(selected.id), lotApi.list(selected.id), occupationApi.list(selected.id), alertApi.list(selected.id)]).then(([areaResult, taskResult, animalResult, lotResult, occupationResult, alertResult]) => {
+      setAreas(areaResult.areas); setTasks(taskResult.tasks); setAnimals(animalResult.animals); setLots(lotResult.lots); setOccupations(occupationResult.occupations); setAlerts(alertResult.alerts);
     }).catch(showError);
   }
 
@@ -52,8 +53,8 @@ function PersistentPastoFlux() {
       if (selected) {
         window.localStorage.setItem("pastoflux.activeFarmId", String(selected.id));
         setFarm(selected);
-        void Promise.all([areaApi.list(selected.id), taskApi.list(selected.id), animalApi.list(selected.id), lotApi.list(selected.id), occupationApi.list(selected.id)]).then(([areaResult, taskResult, animalResult, lotResult, occupationResult]) => {
-          setAreas(areaResult.areas); setTasks(taskResult.tasks); setAnimals(animalResult.animals); setLots(lotResult.lots); setOccupations(occupationResult.occupations);
+        void Promise.all([areaApi.list(selected.id), taskApi.list(selected.id), animalApi.list(selected.id), lotApi.list(selected.id), occupationApi.list(selected.id), alertApi.list(selected.id)]).then(([areaResult, taskResult, animalResult, lotResult, occupationResult, alertResult]) => {
+          setAreas(areaResult.areas); setTasks(taskResult.tasks); setAnimals(animalResult.animals); setLots(lotResult.lots); setOccupations(occupationResult.occupations); setAlerts(alertResult.alerts);
         }).catch(showError);
       }
     }).catch(showError);
@@ -81,7 +82,7 @@ function PersistentPastoFlux() {
     if (!farm) return;
     setError("");
     try {
-      const payload = { farmId: farm.id, name: String(formData.get("name") ?? ""), size: Number(formData.get("size")), notes: String(formData.get("notes") ?? "") };
+      const payload = { farmId: farm.id, name: String(formData.get("name") ?? ""), size: Number(formData.get("size")), maxCapacity: Number(formData.get("maxCapacity")), notes: String(formData.get("notes") ?? "") };
       const result = editingArea ? await areaApi.update(editingArea.id, payload) : await areaApi.create(payload);
       setAreas((values) => editingArea ? values.map((item) => item.id === result.area.id ? result.area : item) : [...values, result.area]);
       setDialog(null); setEditingArea(null); showNotice(result.warning ?? "Área salva com sucesso.");
@@ -135,7 +136,7 @@ function PersistentPastoFlux() {
         <div className="mobile-nav">{persistentNav.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><span>{item.icon}</span>{item.label}</button>)}</div>
         <div className="content">
           {error && <div className="form-error" role="alert">{error}</div>}
-          {view === "visao" && <OverviewPersisted farm={farm} mappedArea={mappedArea} areas={areas.length} pending={pendingTasks.length} openFarm={() => setDialog("farm")} openArea={() => openArea()} openTask={() => openTask()} />}
+          {view === "visao" && <OverviewPersisted farm={farm} mappedArea={mappedArea} areas={areas.length} pending={pendingTasks.length} alerts={alerts} onAlertTask={async (alert) => { try { const result = await alertApi.convertToTask(alert.id); setTasks((values) => values.some((item) => item.id === result.task.id) ? values : [...values, result.task]); setAlerts((values) => values.map((item) => item.id === alert.id ? result.alert : item)); showNotice("Alerta convertido em tarefa."); } catch (cause) { showError(cause); } }} openFarm={() => setDialog("farm")} openArea={() => openArea()} openTask={() => openTask()} />}
           {view === "fazenda" && <FarmView farm={farm} mappedArea={mappedArea} areaCount={areas.length} openFarm={() => setDialog("farm")} />}
           {view === "pastagens" && <AreasView farm={farm} areas={areas} mappedArea={mappedArea} openArea={openArea} occupations={occupations} />}
           {view === "agenda" && <AgendaPersisted farm={farm} tasks={tasks} openTask={openTask} toggleTask={toggleTask} />}
@@ -157,7 +158,7 @@ function PageHeading({ eyebrow, title, text, action }: { eyebrow: string; title:
   return <div className="page-title"><div><small>{eyebrow}</small><h1>{title}</h1><p>{text}</p></div>{action}</div>;
 }
 
-function OverviewPersisted({ farm, mappedArea, areas, pending, openFarm, openArea, openTask }: { farm: Farm | null; mappedArea: number; areas: number; pending: number; openFarm: () => void; openArea: () => void; openTask: () => void }) {
+function OverviewPersisted({ farm, mappedArea, areas, pending, alerts, onAlertTask, openFarm, openArea, openTask }: { farm: Farm | null; mappedArea: number; areas: number; pending: number; alerts: FarmAlert[]; onAlertTask: (alert: FarmAlert) => void; openFarm: () => void; openArea: () => void; openTask: () => void }) {
   return (
     <>
       <PageHeading eyebrow="VISÃO GERAL" title={farm ? `Olá, ${farm.name}.` : "Bem-vindo ao PastoFlux."} text="Acompanhe os dados persistentes da sua propriedade." action={<button className="primary big" onClick={farm ? openTask : openFarm}>＋ {farm ? "Nova atividade" : "Cadastrar fazenda"}</button>} />
@@ -179,6 +180,10 @@ function OverviewPersisted({ farm, mappedArea, areas, pending, openFarm, openAre
           <button onClick={openTask} disabled={!farm}>Criar atividade</button>
         </div>
       </section>
+      {farm && <section className="panel">
+        <div className="panel-heading"><div><h2>Alertas de manejo</h2><p>Capacidade, ocupação e recuperação das áreas da fazenda ativa.</p></div></div>
+        {alerts.length ? <div className="agenda-list">{alerts.slice(0, 5).map((alert) => <article className="agenda-item" key={alert.id}><div className="agenda-copy"><span className="status good">{alert.type === "capacity_exceeded" ? "Capacidade" : alert.type === "occupation_ended" ? "Ocupação" : "Recuperação"}</span><h2>{alert.title}</h2><p>{alert.message} · Data: {alert.dueDate}</p></div><div className="task-actions">{alert.taskId ? <span className="status">Na agenda</span> : <button className="primary" onClick={() => onAlertTask(alert)}>Criar tarefa</button>}</div></article>)}</div> : <div className="agenda-empty"><strong>Nenhum alerta registrado</strong><p>Os alertas serão criados automaticamente a partir das ocupações.</p></div>}
+      </section>}
     </>
   );
 }
@@ -223,6 +228,7 @@ function AreasView({ farm, areas, mappedArea, openArea, occupations }: { farm: F
                 <div className="pasture-top"><span className="status good">Cadastrada</span><button onClick={() => openArea(area)} aria-label={`Editar ${area.name}`}>•••</button></div>
                 <h3>{area.name}</h3>
                 <p>{area.size} hectares</p>
+                <p>Capacidade máxima: {area.maxCapacity} cabeças</p>
                 <div className="level-label"><span>Participação na fazenda</span><b>{Math.round((area.size / farm.totalArea) * 100)}%</b></div>
                 <div className="progress"><i className="good" style={{ width: `${Math.min(100, (area.size / farm.totalArea) * 100)}%` }} /></div>
                 <small>{area.notes || "Sem observações"}</small>
@@ -544,6 +550,7 @@ function AreaDialog({ farm, area, onClose, onSave, error }: { farm: Farm; area: 
           <div className="form-grid">
             <label>Nome da área<input name="name" required defaultValue={area?.name} placeholder="Ex.: Piquete Norte" /></label>
             <label>Tamanho (hectares)<input name="size" type="number" min="0.01" step="0.01" required defaultValue={area?.size} /></label>
+            <label>Capacidade máxima (cabeças)<input name="maxCapacity" type="number" min="1" step="1" required defaultValue={area?.maxCapacity ?? 1} /></label>
             <label className="wide">Observações<input name="notes" defaultValue={area?.notes} placeholder="Condição, uso ou detalhes" /></label>
           </div>
           {error && <p className="form-error">{error}</p>}

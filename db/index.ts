@@ -15,6 +15,7 @@ const SCHEMA_STATEMENTS = [
     "farm_id" integer NOT NULL,
     "name" text NOT NULL,
     "size" real NOT NULL,
+    "max_capacity" integer DEFAULT 0 NOT NULL,
     "notes" text DEFAULT '' NOT NULL,
     "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -33,12 +34,14 @@ const SCHEMA_STATEMENTS = [
     "due_date" text NOT NULL,
     "status" text DEFAULT 'pending' NOT NULL,
     "details" text DEFAULT '' NOT NULL,
+    "source_alert_id" integer,
     "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
     FOREIGN KEY ("farm_id") REFERENCES "farms"("id") ON UPDATE no action ON DELETE cascade
   )`,
   `CREATE INDEX IF NOT EXISTS "tasks_farm_id_idx" ON "tasks" ("farm_id")`,
   `CREATE INDEX IF NOT EXISTS "tasks_farm_status_due_date_idx" ON "tasks" ("farm_id", "status", "due_date")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "tasks_source_alert_idx" ON "tasks" ("source_alert_id")`,
   `CREATE TABLE IF NOT EXISTS "animals" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "farm_id" integer NOT NULL, "identification" text NOT NULL, "category" text NOT NULL, "weight" real, "birth_date" text, "active" integer DEFAULT 1 NOT NULL, "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL, "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL, FOREIGN KEY ("farm_id") REFERENCES "farms"("id") ON DELETE cascade)`,
   `CREATE INDEX IF NOT EXISTS "animals_farm_id_idx" ON "animals" ("farm_id")`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "animals_farm_identification_idx" ON "animals" ("farm_id", "identification")`,
@@ -89,6 +92,26 @@ const SCHEMA_STATEMENTS = [
     FOREIGN KEY ("offer_id") REFERENCES "rental_offers"("id") ON DELETE cascade
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "rental_contact_requests_offer_requester_idx" ON "rental_contact_requests" ("offer_id", "requester_id")`,
+  `CREATE TABLE IF NOT EXISTS "alerts" (
+    "id" integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+    "farm_id" integer NOT NULL,
+    "area_id" integer,
+    "occupation_id" integer,
+    "type" text NOT NULL,
+    "title" text NOT NULL,
+    "message" text NOT NULL,
+    "due_date" text NOT NULL,
+    "dedupe_key" text NOT NULL,
+    "read_at" text,
+    "task_id" integer,
+    "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    FOREIGN KEY ("farm_id") REFERENCES "farms"("id") ON DELETE cascade,
+    FOREIGN KEY ("area_id") REFERENCES "areas"("id") ON DELETE cascade,
+    FOREIGN KEY ("occupation_id") REFERENCES "occupations"("id") ON DELETE cascade,
+    FOREIGN KEY ("task_id") REFERENCES "tasks"("id") ON DELETE set null
+  )`,
+  `CREATE INDEX IF NOT EXISTS "alerts_farm_due_date_idx" ON "alerts" ("farm_id", "due_date")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "alerts_dedupe_key_idx" ON "alerts" ("dedupe_key")`,
 ];
 
 let initPromise: Promise<void> | null = null;

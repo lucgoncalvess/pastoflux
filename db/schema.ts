@@ -128,6 +128,7 @@ export const areas = sqliteTable("areas", {
   farmId: integer("farm_id").notNull().references(() => farms.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   size: real("size").notNull(),
+  maxCapacity: integer("max_capacity").notNull().default(0),
   notes: text("notes").notNull().default(""),
   ...timestamps,
 }, (table) => [
@@ -154,10 +155,30 @@ export const tasks = sqliteTable("tasks", {
   dueDate: text("due_date").notNull(),
   status: text("status", { enum: ["pending", "completed"] }).notNull().default("pending"),
   details: text("details").notNull().default(""),
+  sourceAlertId: integer("source_alert_id").references(() => alerts.id, { onDelete: "set null" }),
   ...timestamps,
 }, (table) => [
   index("tasks_farm_id_idx").on(table.farmId),
   index("tasks_farm_status_due_date_idx").on(table.farmId, table.status, table.dueDate),
+  uniqueIndex("tasks_source_alert_idx").on(table.sourceAlertId),
+]);
+
+export const alerts = sqliteTable("alerts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  farmId: integer("farm_id").notNull().references(() => farms.id, { onDelete: "cascade" }),
+  areaId: integer("area_id").references(() => areas.id, { onDelete: "cascade" }),
+  occupationId: integer("occupation_id").references(() => occupations.id, { onDelete: "cascade" }),
+  type: text("type", { enum: ["capacity_exceeded", "occupation_ended", "recovery_ended"] }).notNull(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  dueDate: text("due_date").notNull(),
+  dedupeKey: text("dedupe_key").notNull(),
+  readAt: text("read_at"),
+  taskId: integer("task_id").references(() => tasks.id, { onDelete: "set null" }),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("alerts_farm_due_date_idx").on(table.farmId, table.dueDate),
+  uniqueIndex("alerts_dedupe_key_idx").on(table.dedupeKey),
 ]);
 
 export const rentalOffers = sqliteTable("rental_offers", {

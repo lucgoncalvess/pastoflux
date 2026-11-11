@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { animalLots, animals, areas, auditLogs, farms, lots, movements, occupations, pastureMeasurements, rentalContactRequests, rentalOffers, tasks, userFarms } from "@/db/schema";
-import { areaWarning, parseAnimal, parseArea, parseFarm, parseLot, parseMeasurement, parseMovement, parseRentalOffer, parseTask } from "@/lib/domain-validation";
+import { alerts, animalLots, animals, areas, auditLogs, farms, lots, movements, occupations, pastureMeasurements, rentalContactRequests, rentalOffers, tasks, userFarms } from "@/db/schema";
+import { areaWarning, isCapacityExceeded, parseAnimal, parseArea, parseFarm, parseLot, parseMeasurement, parseMovement, parseRentalOffer, parseTask, recoveryEndDate } from "@/lib/domain-validation";
 
 /**
  * Utilitário para padronização de respostas de erro da API.
@@ -330,6 +330,92 @@ export async function listTasks(request: Request, farmId: number) {
   await requireFarmAccess(request, farmId);
   const db = await getDb();
   return db.select().from(tasks).where(eq(tasks.farmId, farmId)).orderBy(asc(tasks.dueDate), asc(tasks.id));
+}
+
+async function syncFarmAlerts(farmId: number) {
+  const db = await getDb();
+  const farmOccupations = await db.select().from(occupations).where(eq(occupations.farmId, farmId));
+  const farmAreas = await db.select().from(areas).where(eq(areas.farmId, farmId));
+  const farmMovements = await db.select().from(movements).where(eq(movements.farmId, farmId));
+  const areaById = new Map(farmAreas.map((area) => [area.id, area]));
+  for (const occupation of farmOccupations) {
+    const area = areaById.get(occupation.areaId);
+    if (!area) continue;
+    const movement = farmMovements.find((item) => item.lotId === occupation.lotId && item.destinationAreaId === occupation.areaId && item.movedAt === occupation.startedAt);
+    if (movement && isCapacityExceeded(movement.quantity, area.maxCapacity)) {
+      await db.insert(alerts).values({
+        farmId, areaId: area.id, occupationId: occupation.id, type: "capacity_exceeded",
+        title: "Capacidade da área excedida",
+        message: `${movement.quantity} animais ocupam ${area.name}, acima do limite de ${area.maxCapacity}.`,
+        dueDate: occupation.startedAt,
+        dedupeKey: `capacity_exceeded:${occupation.id}`,
+      }).onConflictDoNothing({ target: alerts.dedupeKey });
+    }
+    if (occupation.endedAt) {
+      await db.insert(alerts).values({
+        farmId, areaId: area.id, occupationId: occupation.id, type: "occupation_ended",
+        title: "Fim da ocupação",
+        message: `A ocupação da área ${area.name} terminou em ${occupation.endedAt}.`,
+        dueDate: occupation.endedAt,
+        dedupeKey: `occupation_ended:${occupation.id}`,
+      }).onConflictDoNothing({ target: alerts.dedupeKey });
+      if (occupation.recoveryDays > 0) {
+        const recoveryDate = recoveryEndDate(occupation.endedAt, occupation.recoveryDays);
+        if (!recoveryDate) continue;
+        await db.insert(alerts).values({
+          farmId, areaId: area.id, occupationId: occupation.id, type: "recovery_ended",
+          title: "Fim do período de recuperação",
+          message: `A área ${area.name} concluiu a recuperação em ${recoveryDate}.`,
+          dueDate: recoveryDate,
+          dedupeKey: `recovery_ended:${occupation.id}`,
+        }).onConflictDoNothing({ target: alerts.dedupeKey });
+      }
+    }
+  }
+}
+
+export async function listAlerts(request: Request, farmId: number) {
+  await requireFarmAccess(request, farmId);
+  await syncFarmAlerts(farmId);
+  const db = await getDb();
+  return db.select().from(alerts).where(eq(alerts.farmId, farmId)).orderBy(desc(alerts.dueDate), desc(alerts.id));
+}
+
+export async function markAlertRead(request: Request, alertId: number) {
+  const db = await getDb();
+  const [current] = await db.select().from(alerts).where(eq(alerts.id, alertId));
+  if (!current) throw new Error("Alerta não encontrado.");
+  await requireFarmAccess(request, current.farmId, true);
+  const [alert] = await db.update(alerts).set({ readAt: new Date().toISOString() }).where(eq(alerts.id, alertId)).returning();
+  return Response.json({ alert });
+}
+
+export async function convertAlertToTask(request: Request, alertId: number) {
+  const db = await getDb();
+  const [current] = await db.select().from(alerts).where(eq(alerts.id, alertId));
+  if (!current) throw new Error("Alerta não encontrado.");
+  await requireFarmAccess(request, current.farmId, true);
+  if (current.taskId) {
+    const [existing] = await db.select().from(tasks).where(eq(tasks.id, current.taskId));
+    if (existing) return Response.json({ task: existing, alert: current });
+  }
+  const result = await db.transaction(async (tx) => {
+    const [task] = await tx.insert(tasks).values({
+      farmId: current.farmId,
+      title: current.title,
+      type: "Alerta",
+      lote: "",
+      origin: null,
+      destination: null,
+      dueDate: current.dueDate,
+      status: "pending",
+      details: current.message,
+      sourceAlertId: current.id,
+    }).returning();
+    const [alert] = await tx.update(alerts).set({ taskId: task.id, readAt: new Date().toISOString() }).where(eq(alerts.id, current.id)).returning();
+    return { task, alert };
+  });
+  return Response.json(result, { status: 201 });
 }
 
 export async function listRentalOffers(request: Request) {

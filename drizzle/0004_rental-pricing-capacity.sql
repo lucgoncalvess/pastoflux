@@ -4,5 +4,7 @@ ALTER TABLE `rental_offers` ADD `capacity_grande` integer NOT NULL DEFAULT 1;
 ALTER TABLE `rental_offers` ADD `monthly_rate_novilho` real NOT NULL DEFAULT 1;
 ALTER TABLE `rental_offers` ADD `monthly_rate_medio` real NOT NULL DEFAULT 1;
 ALTER TABLE `rental_offers` ADD `monthly_rate_grande` real NOT NULL DEFAULT 1;
+DROP INDEX IF EXISTS `rental_offers_search_idx`;
 ALTER TABLE `rental_offers` DROP COLUMN `capacity`;
 ALTER TABLE `rental_offers` DROP COLUMN `daily_rate`;
+CREATE INDEX `rental_offers_search_idx` ON `rental_offers` (`status`, `region`, `capacity_medio`);

@@ -1,6 +1,6 @@
 // Definições de tipos TypeScript compartilhadas entre frontend e backend
 export type Farm = { id: number; name: string; totalArea: number };
-export type Area = { id: number; farmId: number; name: string; size: number; notes: string };
+export type Area = { id: number; farmId: number; name: string; size: number; maxCapacity: number; notes: string };
 export type ManagementTask = {
   id: number;
   farmId: number;
@@ -12,6 +12,12 @@ export type ManagementTask = {
   dueDate: string;
   status: "pending" | "completed";
   details: string;
+  sourceAlertId?: number | null;
+};
+export type FarmAlert = {
+  id: number; farmId: number; areaId: number | null; occupationId: number | null;
+  type: "capacity_exceeded" | "occupation_ended" | "recovery_ended";
+  title: string; message: string; dueDate: string; readAt: string | null; taskId: number | null;
 };
 export type Animal = { id: number; farmId: number; identification: string; category: string; weight: number | null; birthDate: string | null; active: boolean };
 export type Lot = { id: number; farmId: number; name: string };
@@ -57,6 +63,11 @@ export const areaApi = {
     request<{ area: Area; warning: string | null }>("/api/areas", { method: "POST", body: JSON.stringify(payload) }),
   update: (id: number, payload: Omit<Area, "id">) =>
     request<{ area: Area; warning: string | null }>(`/api/areas/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+};
+export const alertApi = {
+  list: (farmId: number) => request<{ alerts: FarmAlert[] }>(`/api/alerts?farmId=${farmId}`),
+  markRead: (id: number) => request<{ alert: FarmAlert }>(`/api/alerts/${id}`, { method: "PATCH", body: JSON.stringify({ read: true }) }),
+  convertToTask: (id: number) => request<{ task: ManagementTask; alert: FarmAlert }>(`/api/alerts/${id}/task`, { method: "POST" }),
 };
 
 // Operações de API para Tarefas da Agenda de Manejo

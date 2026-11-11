@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { areaWarning, parseAnimal, parseArea, parseFarm, parseMeasurement, parseRentalOffer, parseTask } from "../lib/domain-validation.js";
+import { areaWarning, isCapacityExceeded, parseAnimal, parseArea, parseFarm, parseMeasurement, parseRentalOffer, parseTask, recoveryEndDate } from "../lib/domain-validation.js";
 import { simulateGrazing } from "../lib/simulator.js";
 
 test("validates persistent farm, area and task payloads", () => {
   assert.deepEqual(parseFarm({ name: "Fazenda Santa Luzia", totalArea: "72" }), { name: "Fazenda Santa Luzia", totalArea: 72 });
-  assert.deepEqual(parseArea({ name: "Piquete Norte", size: "24", notes: "Descanso" }), { name: "Piquete Norte", size: 24, notes: "Descanso" });
+  assert.deepEqual(parseArea({ name: "Piquete Norte", size: "24", notes: "Descanso" }), { name: "Piquete Norte", size: 24, maxCapacity: 0, notes: "Descanso" });
   assert.equal(parseTask({ title: "Remanejamento", type: "Pastagem", dueDate: "2026-10-20" }).status, "pending");
   assert.throws(() => parseFarm({ name: "", totalArea: 72 }), /obrigatório/);
   assert.throws(() => parseArea({ name: "Piquete", size: 0 }), /maior que zero/);
@@ -47,6 +47,15 @@ test("validates Sprint 4 rental offer payloads", () => {
     monthlyRateGrande: 95,
     contact: "owner@example.com",
     description: "Pasto cercado",
+  });
+
+  test("calculates occupation alerts from capacity and recovery dates", () => {
+    assert.equal(isCapacityExceeded(81, 80), true);
+    assert.equal(isCapacityExceeded(80, 80), false);
+    assert.equal(isCapacityExceeded(81, 0), false);
+    assert.equal(recoveryEndDate("2026-10-31", 1), "2026-11-01");
+    assert.equal(recoveryEndDate("2026-02-28", 2), "2026-03-02");
+    assert.equal(recoveryEndDate(null, 10), null);
   });
   assert.throws(() => parseRentalOffer({ region: "Sul", capacityNovilho: 0, capacityMedio: 1, capacityGrande: 1, monthlyRateNovilho: 100, monthlyRateMedio: 100, monthlyRateGrande: 100, contact: "x" }), /Capacidade/);
 });
