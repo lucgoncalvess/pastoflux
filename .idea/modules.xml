@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/pastoflux-mvp.iml" filepath="$PROJECT_DIR$/.idea/pastoflux-mvp.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/pastoflux.iml" filepath="$PROJECT_DIR$/.idea/pastoflux.iml" />
     </modules>
   </component>
 </project>

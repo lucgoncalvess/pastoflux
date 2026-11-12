@@ -16,7 +16,8 @@ npm run dev
 npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+Cloudflare deployment is configured in `wrangler.jsonc`, with the production
+D1 database bound as `DB`.
 
 ## Included Shape
 
@@ -26,6 +27,7 @@ This starter does not use `wrangler.jsonc`.
 - `db/schema.ts` starts intentionally empty
 - `examples/d1/` contains an optional D1 example surface
 - `drizzle.config.ts` supports local migration generation when needed
+- `wrangler.jsonc` configures the Worker, production D1 binding and migrations
 
 ## Workspace Auth Headers
 
@@ -93,6 +95,36 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 - `npm run build`: verify the vinext build output
 - `npm test`: build the starter and verify its rendered loading skeleton
 - `npm run db:generate`: generate Drizzle migrations after schema changes
+
+## Cloudflare / D1
+
+The production database is the D1 database configured in `wrangler.jsonc`.
+From a new machine, install dependencies and authenticate Wrangler with the
+Cloudflare account that owns the Worker:
+
+```bash
+npm install
+npx wrangler login
+```
+
+Apply pending migrations to the remote database:
+
+```bash
+npx wrangler d1 migrations apply pastoflux-production --remote
+```
+
+Build and deploy the Worker:
+
+```bash
+npm run build
+npx wrangler deploy
+```
+
+The production URL is:
+`https://pastoflux.lucas-zapedus.workers.dev`
+
+Never commit API tokens, passwords or `.env` files. The D1 `database_id` in
+`wrangler.jsonc` identifies the database but is not an authentication secret.
 
 ## Learn More
 

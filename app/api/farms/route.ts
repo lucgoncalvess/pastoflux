@@ -1,7 +1,3 @@
-import { asc } from "drizzle-orm";
-import { getDb } from "@/db";
-import { farms } from "@/db/schema";
-import { apiError, createFarm } from "@/lib/server";
-
-export async function GET() { try { const db = await getDb(); return Response.json({ farms: await db.select().from(farms).orderBy(asc(farms.name)) }); } catch (error) { return apiError(error); } }
+import { apiError, createFarm, listFarms } from "@/lib/server";
+export async function GET(request: Request) { try { return Response.json({ farms: await listFarms(request) }); } catch (error) { return apiError(error); } }
 export async function POST(request: Request) { try { return await createFarm(request); } catch (error) { return apiError(error); } }

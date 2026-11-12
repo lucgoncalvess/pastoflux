@@ -8,6 +8,41 @@
       "when": 1791903621357,
       "tag": "0000_good_tana_nile",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1792782643243,
+      "tag": "0001_amazing_blazing_skull",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792783366825,
+      "tag": "0002_lush_blackheart",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793971228865,
+      "tag": "0003_parallel_romulus",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793972413772,
+      "tag": "0004_rental-pricing-capacity",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794400000000,
+      "tag": "0005_alerts-and-area-capacity",
+      "breakpoints": true
     }
   ]
 }
