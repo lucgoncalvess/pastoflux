@@ -48,16 +48,16 @@ test("validates Sprint 4 rental offer payloads", () => {
     contact: "owner@example.com",
     description: "Pasto cercado",
   });
-
-  test("calculates occupation alerts from capacity and recovery dates", () => {
-    assert.equal(isCapacityExceeded(81, 80), true);
-    assert.equal(isCapacityExceeded(80, 80), false);
-    assert.equal(isCapacityExceeded(81, 0), false);
-    assert.equal(recoveryEndDate("2026-10-31", 1), "2026-11-01");
-    assert.equal(recoveryEndDate("2026-02-28", 2), "2026-03-02");
-    assert.equal(recoveryEndDate(null, 10), null);
-  });
   assert.throws(() => parseRentalOffer({ region: "Sul", capacityNovilho: 0, capacityMedio: 1, capacityGrande: 1, monthlyRateNovilho: 100, monthlyRateMedio: 100, monthlyRateGrande: 100, contact: "x" }), /Capacidade/);
+});
+
+test("calculates occupation alerts from capacity and recovery dates", () => {
+  assert.equal(isCapacityExceeded(81, 80), true);
+  assert.equal(isCapacityExceeded(80, 80), false);
+  assert.equal(isCapacityExceeded(81, 0), false);
+  assert.equal(recoveryEndDate("2026-10-31", 1), "2026-11-01");
+  assert.equal(recoveryEndDate("2026-02-28", 2), "2026-03-02");
+  assert.equal(recoveryEndDate(null, 10), null);
 });
 
 async function render(path = "/") {

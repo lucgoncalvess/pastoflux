@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { alerts, animalLots, animals, areas, auditLogs, farms, lots, movements, occupations, pastureMeasurements, rentalContactRequests, rentalOffers, tasks, userFarms } from "@/db/schema";
 import { areaWarning, isCapacityExceeded, parseAnimal, parseArea, parseFarm, parseLot, parseMeasurement, parseMovement, parseRentalOffer, parseTask, recoveryEndDate } from "@/lib/domain-validation";
@@ -108,7 +108,9 @@ export async function createArea(request: Request) {
   const db = await getDb();
   const existing = await db.select().from(areas).where(eq(areas.farmId, farmId));
   const warning = areaWarning(farm.totalArea, existing, values.size);
-  const [area] = await db.insert(areas).values({ ...values, farmId }).returning();
+  await db.insert(areas).values({ ...values, farmId }).run();
+  const [area] = await db.select().from(areas).where(and(eq(areas.farmId, farmId), eq(areas.name, values.name)));
+  if (!area) throw new Error("Não foi possível salvar a área.");
   await audit(request, farmId, "create", "area", area.id);
   return Response.json({ area, warning }, { status: 201 });
 }
@@ -170,15 +172,23 @@ export async function listAnimals(request: Request, farmId: number) {
 }
 
 export async function createAnimal(request: Request) {
-  const farmId = Number((await request.clone().json()).farmId);
+  const payload = await request.json();
+  const farmId = Number(payload.farmId);
   actorFromRequest(request);
   await requireFarmAccess(request, farmId, true);
   await farmForId(farmId);
-  const values = parseAnimal(await request.json());
   const db = await getDb();
-  const [animal] = await db.insert(animals).values({ ...values, farmId }).returning();
-  await audit(request, farmId, "create", "animal", animal.id);
-  return Response.json({ animal }, { status: 201 });
+  const inputs = Array.isArray(payload.animals) ? payload.animals : [payload];
+  if (!inputs.length) throw new Error("Informe ao menos um animal.");
+  const values = inputs.map(parseAnimal);
+  const identifications = values.map((value) => value.identification);
+  if (new Set(identifications).size !== identifications.length) throw new Error("As identificações dos animais devem ser únicas.");
+  const existing = await db.select({ identification: animals.identification }).from(animals).where(and(eq(animals.farmId, farmId), inArray(animals.identification, identifications)));
+  if (existing.length) throw new Error(`Já existe animal com a identificação ${existing[0].identification}.`);
+  await db.insert(animals).values(values.map((value) => ({ ...value, farmId }))).run();
+  const created = await db.select().from(animals).where(and(eq(animals.farmId, farmId), inArray(animals.identification, identifications)));
+  for (const animal of created) await audit(request, farmId, "create", "animal", animal.id);
+  return inputs.length === 1 ? Response.json({ animal: created[0] }, { status: 201 }) : Response.json({ animals: created }, { status: 201 });
 }
 
 export async function updateAnimal(request: Request) {

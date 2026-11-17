@@ -24,6 +24,7 @@ export const animals = sqliteTable("animals", {
   farmId: integer("farm_id").notNull().references(() => farms.id, { onDelete: "cascade" }),
   identification: text("identification").notNull(),
   category: text("category").notNull(),
+  sex: text("sex", { enum: ["male", "female", "unknown"] }).notNull().default("unknown"),
   weight: real("weight"),
   birthDate: text("birth_date"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),

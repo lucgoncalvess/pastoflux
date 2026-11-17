@@ -141,7 +141,7 @@ function PersistentPastoFlux() {
           {view === "pastagens" && <AreasView farm={farm} areas={areas} mappedArea={mappedArea} openArea={openArea} occupations={occupations} />}
           {view === "agenda" && <AgendaPersisted farm={farm} tasks={tasks} openTask={openTask} toggleTask={toggleTask} />}
           {view === "simulador" && <SimulatorPersisted onSchedule={() => openTask()} />}
-          {view === "rebanho" && <HerdView farm={farm} areas={areas} animals={animals} lots={lots} onAnimal={(animal) => setAnimals((values) => [...values, animal])} onLot={(lot) => setLots((values) => [...values, lot])} onMovement={() => farm && loadFarmData(farm)} />}
+          {view === "rebanho" && <HerdView farm={farm} areas={areas} animals={animals} lots={lots} onAnimals={(created) => setAnimals((values) => [...values, ...created])} onLot={(lot) => setLots((values) => [...values, lot])} onMovement={() => farm && loadFarmData(farm)} />}
           {view === "aluguel" && <RentalView farm={farm} areas={areas} showNotice={showNotice} showError={showError} />}
         </div>
       </section>
@@ -263,9 +263,13 @@ function MeasurementForm({ farmId, areaId }: { farmId: number; areaId: number })
   return <form onSubmit={submit} className="measurement-form"><label>Disponibilidade (%)<input type="number" min="0" max="100" required value={availability} onChange={(event) => setAvailability(event.target.value)} /></label><button type="submit">Registrar</button>{message && <small role="status">{message}</small>}</form>;
 }
 
-function HerdView({ farm, areas, animals, lots, onAnimal, onLot, onMovement }: { farm: Farm | null; areas: Area[]; animals: Animal[]; lots: Lot[]; onAnimal: (animal: Animal) => void; onLot: (lot: Lot) => void; onMovement: () => void }) {
+function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: { farm: Farm | null; areas: Area[]; animals: Animal[]; lots: Lot[]; onAnimals: (animals: Animal[]) => void; onLot: (lot: Lot) => void; onMovement: () => void }) {
   const [identification, setIdentification] = useState("");
   const [category, setCategory] = useState("Gado");
+  const [sex, setSex] = useState<"male" | "female">("male");
+  const [bulkPrefix, setBulkPrefix] = useState("GADO");
+  const [bulkQuantity, setBulkQuantity] = useState("5");
+  const [bulkWeight, setBulkWeight] = useState("");
   const [lotName, setLotName] = useState("");
   const [lotId, setLotId] = useState("");
   const [originAreaId, setOriginAreaId] = useState("");
@@ -280,7 +284,25 @@ function HerdView({ farm, areas, animals, lots, onAnimal, onLot, onMovement }: {
   const activeFarm = farm;
   async function addAnimal(event: React.FormEvent) {
     event.preventDefault();
-    try { const { animal } = await animalApi.create({ farmId: activeFarm.id, identification, category, weight: null, birthDate: null, active: true }); onAnimal(animal); setIdentification(""); setMessage("Animal cadastrado."); } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar."); }
+    try { const { animal } = await animalApi.create({ farmId: activeFarm.id, identification, category, sex, weight: null, birthDate: null, active: true }); onAnimals([animal]); setIdentification(""); setMessage("Animal cadastrado."); } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar."); }
+  }
+  async function addAnimalsInBulk(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      const quantity = Number(bulkQuantity);
+      const prefix = bulkPrefix.trim();
+      const animalsToCreate = Array.from({ length: quantity }, (_, index) => ({
+        identification: `${prefix}-${String(index + 1).padStart(3, "0")}`,
+        category,
+        sex,
+        weight: bulkWeight ? Number(bulkWeight) : null,
+        birthDate: null,
+        active: true,
+      }));
+      const result = await animalApi.createMany({ farmId: activeFarm.id, animals: animalsToCreate });
+      onAnimals(result.animals);
+      setMessage(`${result.animals.length} animais cadastrados.`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar os animais."); }
   }
   async function addLot(event: React.FormEvent) {
     event.preventDefault();
@@ -294,12 +316,13 @@ function HerdView({ farm, areas, animals, lots, onAnimal, onLot, onMovement }: {
     } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível movimentar o lote."); }
   }
   return <><PageHeading eyebrow="CONTROLE DO REBANHO" title="Animais e lotes" text="Cadastre o rebanho persistente e organize os animais por lote." />
-    <section className="panel"><form onSubmit={addAnimal} className="form-grid"><label>Identificação<input required value={identification} onChange={(event) => setIdentification(event.target.value)} /></label><label>Categoria<input required value={category} onChange={(event) => setCategory(event.target.value)} /></label><button className="primary" type="submit">Cadastrar animal</button></form>
+    <section className="panel herd-panel"><div className="herd-section-heading"><div><small>CADASTRO RÁPIDO</small><h2>Adicionar animal</h2></div><span>Identifique o sexo para melhorar o manejo do rebanho.</span></div><form onSubmit={addAnimal} className="form-grid herd-form"><label>Identificação<input required value={identification} onChange={(event) => setIdentification(event.target.value)} /></label><label>Categoria<input required value={category} onChange={(event) => setCategory(event.target.value)} /></label><label>Sexo<select required value={sex} onChange={(event) => setSex(event.target.value as "male" | "female")}><option value="female">Fêmea</option><option value="male">Macho</option></select></label><button className="primary herd-submit" type="submit">＋ Cadastrar animal</button></form>
+    <form onSubmit={addAnimalsInBulk} className="form-grid herd-form herd-form--bulk"><div className="herd-form-title"><small>CADASTRO EM LOTE</small><strong>Vários animais com peso parecido</strong></div><label>Prefixo das identificações<input required value={bulkPrefix} onChange={(event) => setBulkPrefix(event.target.value)} placeholder="Ex.: LOTE-A" /></label><label>Quantidade<input required type="number" min="1" max="500" step="1" value={bulkQuantity} onChange={(event) => setBulkQuantity(event.target.value)} /></label><label>Categoria<input required value={category} onChange={(event) => setCategory(event.target.value)} /></label><label>Sexo<select required value={sex} onChange={(event) => setSex(event.target.value as "male" | "female")}><option value="female">Fêmea</option><option value="male">Macho</option></select></label><label>Peso parecido (kg)<input type="number" min="0.01" step="0.01" value={bulkWeight} onChange={(event) => setBulkWeight(event.target.value)} placeholder="Opcional" /></label><button className="primary herd-submit" type="submit">＋ Cadastrar vários</button></form>
     <form onSubmit={addLot} className="form-grid"><label>Nome do lote<input required value={lotName} onChange={(event) => setLotName(event.target.value)} /></label><button className="primary" type="submit">Cadastrar lote</button></form>{message && <p role="status">{message}</p>}
     <form onSubmit={moveLot} className="form-grid"><label>Lote<select required value={lotId} onChange={(event) => setLotId(event.target.value)}><option value="">Selecione</option>{lots.map((lot) => <option key={lot.id} value={lot.id}>{lot.name}</option>)}</select></label><label>Origem<select value={originAreaId} onChange={(event) => setOriginAreaId(event.target.value)}><option value="">Sem origem</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label><label>Destino<select required value={destinationAreaId} onChange={(event) => setDestinationAreaId(event.target.value)}><option value="">Selecione</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label><button className="primary" type="submit">Movimentar lote</button></form>
     <div className="summary-strip"><span><small>ANIMAIS ATIVOS</small><strong>{stats?.heads ?? animals.filter((animal) => animal.active).length}</strong></span><span><small>PESO MÉDIO</small><strong>{Number(stats?.averageWeight ?? 0).toFixed(1)} kg</strong></span><span><small>LOTES</small><strong>{lots.length}</strong></span></div>
     <label>Filtrar categoria<select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="">Todas</option>{Array.from(new Set(animals.map((animal) => animal.category))).map((item) => <option key={item}>{item}</option>)}</select></label>
-    <ul>{animals.map((animal) => <li key={animal.id}>{animal.identification} · {animal.category}</li>)}</ul></section></>;
+    <ul>{animals.map((animal) => <li key={animal.id}>{animal.identification} · {animal.sex === "female" ? "Fêmea" : animal.sex === "male" ? "Macho" : "Sexo não informado"} · {animal.category}</li>)}</ul></section></>;
 }
 
 function AgendaPersisted({ farm, tasks, openTask, toggleTask }: { farm: Farm | null; tasks: PersistedTask[]; openTask: (task?: PersistedTask) => void; toggleTask: (task: PersistedTask) => void }) {

@@ -19,7 +19,8 @@ export type FarmAlert = {
   type: "capacity_exceeded" | "occupation_ended" | "recovery_ended";
   title: string; message: string; dueDate: string; readAt: string | null; taskId: number | null;
 };
-export type Animal = { id: number; farmId: number; identification: string; category: string; weight: number | null; birthDate: string | null; active: boolean };
+export type AnimalSex = "male" | "female" | "unknown";
+export type Animal = { id: number; farmId: number; identification: string; category: string; sex: AnimalSex; weight: number | null; birthDate: string | null; active: boolean };
 export type Lot = { id: number; farmId: number; name: string };
 export type Movement = { id: number; farmId: number; lotId: number; origin: string | null; destination: string; originAreaId: number | null; destinationAreaId: number; movedAt: string; quantity: number; recoveryDays: number };
 export type PastureMeasurement = { id: number; farmId: number; areaId: number; measuredAt: string; availability: number; source: string; notes: string };
@@ -40,6 +41,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (typeof window !== "undefined") {
     const activeFarmId = window.localStorage.getItem("pastoflux.activeFarmId");
     if (activeFarmId) headers.set("x-farm-id", activeFarmId);
+    let browserUserId = window.localStorage.getItem("pastoflux.browserUserId");
+    if (!browserUserId) {
+      browserUserId = typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `browser-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      window.localStorage.setItem("pastoflux.browserUserId", browserUserId);
+    }
+    headers.set("x-pastoflux-user-id", browserUserId);
   }
   const response = await fetch(path, { ...init, headers });
   const body = (await response.json()) as T & { error?: string };
@@ -82,6 +91,8 @@ export const taskApi = {
 export const animalApi = {
   list: (farmId: number) => request<{ animals: Animal[] }>(`/api/animals?farmId=${farmId}`),
   create: (payload: Omit<Animal, "id">) => request<{ animal: Animal }>("/api/animals", { method: "POST", body: JSON.stringify(payload) }),
+  createMany: (payload: { farmId: number; animals: Omit<Animal, "id" | "farmId">[] }) =>
+    request<{ animals: Animal[] }>("/api/animals", { method: "POST", body: JSON.stringify(payload) }),
   update: (id: number, payload: Omit<Animal, "id">) => request<{ animal: Animal }>(`/api/animals/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
 };
 export const lotApi = {

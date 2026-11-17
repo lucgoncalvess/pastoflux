@@ -1,8 +1,7 @@
-# vinext-starter
+# PastoFlux
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+MVP de gestão de pastagens, rebanho e agenda de manejo, com persistência em
+Cloudflare D1/Drizzle e módulo de ofertas de aluguel por cabeça de gado.
 
 ## Prerequisites
 
@@ -19,15 +18,15 @@ npm run build
 Cloudflare deployment is configured in `wrangler.jsonc`, with the production
 D1 database bound as `DB`.
 
-## Included Shape
+## Funcionalidades entregues
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-- `wrangler.jsonc` configures the Worker, production D1 binding and migrations
+- Cadastro persistente de fazendas e áreas/piquetes.
+- Rebanho, lotes, movimentações e medições de pastagem.
+- Agenda de manejo com alertas de capacidade e recuperação.
+- Simulador demonstrativo de remanejamento.
+- Sprint 4: publicação, edição, encerramento, filtros e solicitação protegida
+  de contato em ofertas de aluguel.
+- Controle de acesso por usuário/fazenda, perfis de leitura/escrita e auditoria.
 
 ## Workspace Auth Headers
 
@@ -89,11 +88,12 @@ or enforce explicit server-side membership or allowlist checks.
 Use SIWC for account pages, user-specific dashboards, saved records, and write
 actions tied to the current ChatGPT user. Leave public content anonymous.
 
-## Useful Commands
+## Desenvolvimento e validação
 
 - `npm run dev`: start local development
 - `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
+- `npm test`: build e testes automatizados de domínio e renderização
+- `npm run lint`: validação estática
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 
 ## Cloudflare / D1
@@ -122,6 +122,10 @@ npx wrangler deploy
 
 The production URL is:
 `https://pastoflux.lucas-zapedus.workers.dev`
+
+Antes da apresentação, confirme também que as migrações remotas foram aplicadas,
+que o login/identidade do ambiente está ativo e que existe uma fazenda de
+demonstração com áreas, animais, alertas e uma oferta publicada.
 
 Never commit API tokens, passwords or `.env` files. The D1 `database_id` in
 `wrangler.jsonc` identifies the database but is not an authentication secret.
