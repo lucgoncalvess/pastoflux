@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { alertApi, animalApi, areaApi, farmApi, herdStatsApi, lotApi, measurementApi, movementApi, occupationApi, rentalApi, taskApi, type Animal, type Area, type Farm, type FarmAlert, type Lot, type ManagementTask as PersistedTask, type RentalOffer } from "@/lib/api";
+import { alertApi, animalApi, getAccessCode, switchAccessCode, areaApi, farmApi, herdStatsApi, lotApi, measurementApi, movementApi, occupationApi, rentalApi, taskApi, type Animal, type Area, type Farm, type FarmAlert, type Lot, type ManagementTask as PersistedTask, type RentalOffer } from "@/lib/api";
 import { simulateGrazing } from "@/lib/simulator";
 
 type PersistentView = "visao" | "fazenda" | "rebanho" | "pastagens" | "simulador" | "agenda" | "aluguel";
-type DialogName = "farm" | "area" | "task" | null;
+type DialogName = "farm" | "area" | "task" | "access" | "farms" | null;
 
 const persistentNav: { id: PersistentView; label: string; icon: string }[] = [
   { id: "visao", label: "Visão geral", icon: "⌂" },
@@ -32,6 +32,7 @@ function PersistentPastoFlux() {
   const [occupations, setOccupations] = useState<{ id: number; areaId: number; lotId: number; status: string; startedAt: string; endedAt: string | null }[]>([]);
   const [alerts, setAlerts] = useState<FarmAlert[]>([]);
   const [dialog, setDialog] = useState<DialogName>(null);
+  const [farmMode, setFarmMode] = useState<"edit" | "create">("edit");
   const [editingArea, setEditingArea] = useState<Area | null>(null);
   const [editingTask, setEditingTask] = useState<PersistedTask | null>(null);
   const [notice, setNotice] = useState("");
@@ -49,7 +50,9 @@ function PersistentPastoFlux() {
     void farmApi.list().then(({ farms: values }) => {
       setFarms(values);
       const savedId = Number(window.localStorage.getItem("pastoflux.activeFarmId"));
-      const selected = values.find((item) => item.id === savedId) ?? values[0];
+      // Com várias fazendas e nenhuma escolhida ainda, o usuário escolhe no seletor.
+      const selected = values.find((item) => item.id === savedId) ?? (values.length === 1 ? values[0] : undefined);
+      if (!selected && values.length > 1) setDialog("farms");
       if (selected) {
         window.localStorage.setItem("pastoflux.activeFarmId", String(selected.id));
         setFarm(selected);
@@ -67,7 +70,8 @@ function PersistentPastoFlux() {
     setError("");
     try {
       const payload = { name: String(formData.get("name") ?? ""), totalArea: Number(formData.get("totalArea")) };
-      const result = farm ? await farmApi.update(farm.id, payload) : await farmApi.create(payload);
+      const editing = farmMode === "edit" ? farm : null;
+      const result = editing ? await farmApi.update(editing.id, payload) : await farmApi.create(payload);
       const saved = result.farm;
       setFarm(saved);
       setFarms((values) => values.some((item) => item.id === saved.id) ? values.map((item) => item.id === saved.id ? saved : item) : [...values, saved]);
@@ -110,20 +114,32 @@ function PersistentPastoFlux() {
 
   function openArea(area?: Area) { setEditingArea(area ?? null); setError(""); setDialog("area"); }
   function openTask(task?: PersistedTask) { setEditingTask(task ?? null); setError(""); setDialog("task"); }
+  function openFarm(mode: "edit" | "create" = farm ? "edit" : "create") { setFarmMode(mode); setError(""); setDialog("farm"); }
   const needFarm = !farm;
-  function selectFarm(value: string) {
-    const selected = farms.find((item) => item.id === Number(value));
-    if (!selected) return;
+  function activateFarm(selected: Farm) {
     window.localStorage.setItem("pastoflux.activeFarmId", String(selected.id));
     setFarm(selected);
+    setError("");
+    setDialog(null);
     loadFarmData(selected);
+  }
+
+  /** Troca para o código de outro aparelho (validado no servidor antes de trocar). */
+  async function enterAccessCode(code: string) {
+    const values = await switchAccessCode(code);
+    setFarms(values);
+    setFarm(null);
+    setAreas([]); setTasks([]); setAnimals([]); setLots([]); setOccupations([]); setAlerts([]);
+    if (values.length === 1) activateFarm(values[0]);
+    else setDialog("farms");
+    showNotice(`${values.length} ${values.length === 1 ? "fazenda encontrada" : "fazendas encontradas"}.`);
   }
 
   return (
     <main className="app-shell">
       <aside className="sidebar">
         <button className="brand" onClick={() => setView("visao")} aria-label="Ir para visão geral"><span className="brand-mark"><i /><i /><i /></span><span>PASTO<span>FLUX</span></span></button>
-        <div className="farm-switcher"><span className="farm-avatar">{farm?.name.slice(0, 2).toUpperCase() ?? "PF"}</span><span><small>PROPRIEDADE ATIVA</small><select value={farm?.id ?? ""} onChange={(event) => selectFarm(event.target.value)} aria-label="Selecionar fazenda">{farms.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}{!farms.length && <option value="">Cadastre sua fazenda</option>}</select></span><button type="button" onClick={() => { setError(""); setDialog("farm"); }} aria-label="Cadastrar ou editar fazenda">Editar</button></div>
+        <div className="farm-switcher"><span className="farm-avatar">{farm?.name.slice(0, 2).toUpperCase() ?? "PF"}</span><span><small>PROPRIEDADE ATIVA</small><button type="button" className="farm-switcher-name" onClick={() => farms.length ? setDialog("farms") : openFarm("create")} aria-label="Trocar de fazenda">{farm?.name ?? (farms.length ? "Escolher fazenda" : "Cadastre sua fazenda")} <span aria-hidden="true">▾</span></button></span><button type="button" onClick={() => openFarm()} aria-label="Cadastrar ou editar fazenda">{farm ? "Editar" : "Nova"}</button></div>
         <nav aria-label="Navegação principal"><small>GESTÃO</small>{persistentNav.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav>
         <div className="sidebar-card"><span className="signal"><i /><i /><i /></span><div><strong>Dados persistentes</strong><small>{farm ? "Sincronizados no D1" : "Aguardando cadastro"}</small></div></div>
       </aside>
@@ -131,25 +147,41 @@ function PersistentPastoFlux() {
         <header className="topbar">
           <div className="mobile-brand">PASTO<span>FLUX</span></div>
           <div className="breadcrumb">{farm?.name ?? "Nova propriedade"} <span>/</span> {persistentNav.find((item) => item.id === view)?.label}</div>
-          <div className="top-actions"><button className="tour-button" onClick={() => setView("agenda")}>Ver agenda</button></div>
+          <div className="top-actions">
+            {farms.length > 1 && <button className="farm-chip" onClick={() => setDialog("farms")} aria-label="Trocar de fazenda"><span>{farm?.name ?? "Escolher fazenda"}</span> ▾</button>}
+            <button className="access-button" onClick={() => { setError(""); setDialog("access"); }}>Código de acesso</button>
+            <button className="tour-button" onClick={() => setView("agenda")}>Ver agenda</button>
+          </div>
         </header>
         <div className="mobile-nav">{persistentNav.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><span>{item.icon}</span>{item.label}</button>)}</div>
         <div className="content">
           {error && <div className="form-error" role="alert">{error}</div>}
-          {view === "visao" && <OverviewPersisted farm={farm} mappedArea={mappedArea} areas={areas.length} pending={pendingTasks.length} alerts={alerts} onAlertTask={async (alert) => { try { const result = await alertApi.convertToTask(alert.id); setTasks((values) => values.some((item) => item.id === result.task.id) ? values : [...values, result.task]); setAlerts((values) => values.map((item) => item.id === alert.id ? result.alert : item)); showNotice("Alerta convertido em tarefa."); } catch (cause) { showError(cause); } }} openFarm={() => setDialog("farm")} openArea={() => openArea()} openTask={() => openTask()} />}
-          {view === "fazenda" && <FarmView farm={farm} mappedArea={mappedArea} areaCount={areas.length} openFarm={() => setDialog("farm")} />}
+          {view === "visao" && <OverviewPersisted farm={farm} mappedArea={mappedArea} areas={areas.length} pending={pendingTasks.length} alerts={alerts} onAlertTask={async (alert) => { try { const result = await alertApi.convertToTask(alert.id); setTasks((values) => values.some((item) => item.id === result.task.id) ? values : [...values, result.task]); setAlerts((values) => values.map((item) => item.id === alert.id ? result.alert : item)); showNotice("Alerta convertido em tarefa."); } catch (cause) { showError(cause); } }} openFarm={() => openFarm()} openArea={() => openArea()} openTask={() => openTask()} />}
+          {view === "fazenda" && <FarmView farm={farm} mappedArea={mappedArea} areaCount={areas.length} openFarm={() => openFarm()} />}
           {view === "pastagens" && <AreasView farm={farm} areas={areas} mappedArea={mappedArea} openArea={openArea} occupations={occupations} />}
           {view === "agenda" && <AgendaPersisted farm={farm} tasks={tasks} openTask={openTask} toggleTask={toggleTask} />}
           {view === "simulador" && <SimulatorPersisted onSchedule={() => openTask()} />}
-          {view === "rebanho" && <HerdView farm={farm} areas={areas} animals={animals} lots={lots} onAnimals={(created) => setAnimals((values) => [...values, ...created])} onLot={(lot) => setLots((values) => [...values, lot])} onMovement={() => farm && loadFarmData(farm)} />}
+          {view === "rebanho" && <HerdView farm={farm} areas={areas} animals={animals} lots={lots} onAnimals={(created) => setAnimals((values) => [...values, ...created])} onLot={() => farm && loadFarmData(farm)} onMovement={() => farm && loadFarmData(farm)} />}
           {view === "aluguel" && <RentalView farm={farm} areas={areas} showNotice={showNotice} showError={showError} />}
         </div>
       </section>
-      {dialog === "farm" && <FarmDialog farm={farm} onClose={() => setDialog(null)} onSave={saveFarm} error={error} />}
+      {dialog === "farm" && <FarmDialog farm={farmMode === "edit" ? farm : null} onClose={() => setDialog(null)} onSave={saveFarm} error={error} />}
+      {dialog === "farms" && <FarmPickerDialog farms={farms} activeId={farm?.id ?? null} onPick={activateFarm} onCreate={() => openFarm("create")} onClose={farm ? () => setDialog(null) : undefined} />}
+      {dialog === "access" && <AccessCodeDialog onSubmit={enterAccessCode} onClose={() => setDialog(null)} />}
       {dialog === "area" && farm && <AreaDialog farm={farm} area={editingArea} onClose={() => { setDialog(null); setEditingArea(null); }} onSave={saveArea} error={error} />}
       {dialog === "task" && farm && <TaskDialog task={editingTask} onClose={() => { setDialog(null); setEditingTask(null); }} onSave={saveTask} error={error} />}
       {notice && <div className="toast" role="status"><span>✓</span>{notice}</div>}
-      {needFarm && <div className="empty-state"><strong>Comece cadastrando a sua fazenda.</strong><button className="primary" onClick={() => setDialog("farm")}>Cadastrar fazenda</button></div>}
+      {needFarm && !dialog && (
+        <div className="empty-state">
+          <strong>{farms.length ? "Escolha uma fazenda para continuar." : "Comece cadastrando a sua fazenda."}</strong>
+          <div>
+            {farms.length
+              ? <button className="primary" onClick={() => setDialog("farms")}>Escolher fazenda</button>
+              : <button className="primary" onClick={() => openFarm("create")}>Cadastrar fazenda</button>}
+            <button className="link-button" onClick={() => setDialog("access")}>Já tenho um código</button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
@@ -393,6 +425,7 @@ function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: 
   const [bulkAreaId, setBulkAreaId] = useState("");
 
   const [lotName, setLotName] = useState("");
+  const [lotAnimalIds, setLotAnimalIds] = useState<number[]>([]);
   const [lotId, setLotId] = useState("");
   const [originAreaId, setOriginAreaId] = useState("");
   const [destinationAreaId, setDestinationAreaId] = useState("");
@@ -456,9 +489,11 @@ function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: 
   async function addLot(event: React.FormEvent) {
     event.preventDefault();
     try {
-      const { lot } = await lotApi.create({ farmId: activeFarm.id, name: lotName });
+      if (!lotAnimalIds.length) throw new Error("Selecione ao menos um animal para o lote.");
+      const { lot } = await lotApi.create({ farmId: activeFarm.id, name: lotName, animalIds: lotAnimalIds });
       onLot(lot);
       setLotName("");
+      setLotAnimalIds([]);
       setMessage("Lote cadastrado com sucesso.");
       setTimeout(() => setMessage(""), 4000);
     } catch (error) {
@@ -477,7 +512,8 @@ function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: 
         originAreaId: originAreaId ? Number(originAreaId) : null,
         destinationAreaId: Number(destinationAreaId),
         movedAt: new Date().toISOString().slice(0, 10),
-        quantity: animals.length,
+        // Informativo: o servidor recalcula a partir dos animais vinculados ao lote.
+        quantity: lots.find((item) => item.id === Number(lotId))?.animalCount ?? 0,
         recoveryDays: 0,
       });
       setMessage("Movimentação registrada com sucesso.");
@@ -637,6 +673,25 @@ function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: 
               Nome do lote
               <input required value={lotName} onChange={(event) => setLotName(event.target.value)} placeholder="Ex.: Lote Recria 2026" />
             </label>
+            <fieldset className="lot-animal-picker">
+              <legend>Animais do lote ({lotAnimalIds.length} selecionados)</legend>
+              {animals.length ? (
+                <div className="lot-animal-list">
+                  {animals.map((animal) => (
+                    <label key={animal.id} className="lot-animal-option">
+                      <input
+                        type="checkbox"
+                        checked={lotAnimalIds.includes(animal.id)}
+                        onChange={(event) => setLotAnimalIds((ids) => event.target.checked ? [...ids, animal.id] : ids.filter((id) => id !== animal.id))}
+                      />
+                      <span>{animal.identification}</span>
+                      <small>{animal.category}</small>
+                    </label>
+                  ))}
+                </div>
+              ) : <p>Cadastre animais para montar o lote.</p>}
+              <small className="lot-animal-hint">Um animal pertence a um único lote; se já estiver em outro, ele é transferido.</small>
+            </fieldset>
             <div className="herd-action-box">
               <button className="primary herd-btn-fixed" type="submit">Cadastrar lote</button>
             </div>
@@ -650,7 +705,7 @@ function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: 
                 Lote
                 <select required value={lotId} onChange={(event) => setLotId(event.target.value)}>
                   <option value="">Selecione</option>
-                  {lots.map((lot) => <option key={lot.id} value={lot.id}>{lot.name}</option>)}
+                  {lots.map((lot) => <option key={lot.id} value={lot.id}>{lot.name} · {lot.animalCount} {lot.animalCount === 1 ? "animal" : "animais"}</option>)}
                 </select>
               </label>
               <label>
@@ -803,16 +858,17 @@ function SimulatorPersisted({ onSchedule }: { onSchedule: () => void }) {
   const [animals, setAnimals] = useState(48);
   const [area, setArea] = useState(24);
   const [availability, setAvailability] = useState(18);
-  const days = simulateGrazing({ animals, area, availability });
+  let days: number | string = "—";
+  try { days = simulateGrazing({ animals, area, availability }); } catch { /* valores incompletos durante a digitação */ }
 
   return (
     <>
       <PageHeading eyebrow="SIMULADOR DE PASTAGENS" title="Antecipe o próximo remanejamento" text="A estimativa é demonstrativa e pode ser registrada na Agenda." />
       <section className="sim-layout">
         <div className="sim-form">
-          <label>Quantidade de animais<input type="number" min="1" value={animals} onChange={(event) => setAnimals(Number(event.target.value))} /></label>
-          <label>Área disponível (ha)<input type="number" min="1" value={area} onChange={(event) => setArea(Number(event.target.value))} /></label>
-          <label>Disponibilidade atual<input type="range" min="5" max="100" value={availability} onChange={(event) => setAvailability(Number(event.target.value))} /><b>{availability}%</b></label>
+          <label>Quantidade de animais<div><input type="number" min="1" value={animals} onChange={(event) => setAnimals(Number(event.target.value))} /><span>cabeças</span></div></label>
+          <label>Área disponível<div><input type="number" min="1" value={area} onChange={(event) => setArea(Number(event.target.value))} /><span>hectares</span></div></label>
+          <label>Disponibilidade atual<div><input type="range" min="5" max="100" value={availability} onChange={(event) => setAvailability(Number(event.target.value))} /><b>{availability}%</b></div></label>
         </div>
         <div className="sim-result">
           <div className="result-head"><span>RESULTADO ATUALIZADO</span><i>● ao vivo</i></div>
@@ -1158,6 +1214,84 @@ function PersistentStat({ label, value, unit, warning, icon }: { label: string; 
       <small>{label}</small>
       <div><strong>{value}</strong><span>{unit}</span></div>
     </article>
+  );
+}
+
+function FarmPickerDialog({ farms, activeId, onPick, onCreate, onClose }: { farms: Farm[]; activeId: number | null; onPick: (farm: Farm) => void; onCreate: () => void; onClose?: () => void }) {
+  return (
+    <div className="modal-backdrop">
+      <dialog open className="modal" aria-labelledby="farm-picker-title">
+        <div className="modal-head">
+          <div><small>{farms.length} {farms.length === 1 ? "PROPRIEDADE" : "PROPRIEDADES"}</small><h2 id="farm-picker-title">Escolha a fazenda</h2></div>
+          {onClose && <button type="button" onClick={onClose} aria-label="Fechar">×</button>}
+        </div>
+        <p className="modal-intro">Todas as telas passam a mostrar os dados da fazenda escolhida. Você pode trocar a qualquer momento.</p>
+        <div className="farm-picker-list">
+          {farms.map((item) => (
+            <button type="button" key={item.id} className={`farm-picker-item ${item.id === activeId ? "active" : ""}`} onClick={() => onPick(item)}>
+              <span className="farm-avatar">{item.name.slice(0, 2).toUpperCase()}</span>
+              <span className="farm-picker-copy"><strong>{item.name}</strong><small>{item.totalArea} ha</small></span>
+              {item.id === activeId ? <em>Ativa</em> : <i aria-hidden="true">›</i>}
+            </button>
+          ))}
+        </div>
+        <div className="modal-actions">
+          <button type="button" onClick={onCreate}>＋ Nova fazenda</button>
+        </div>
+      </dialog>
+    </div>
+  );
+}
+
+function AccessCodeDialog({ onSubmit, onClose }: { onSubmit: (code: string) => Promise<void>; onClose: () => void }) {
+  const [currentCode] = useState(() => getAccessCode());
+  const [code, setCode] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(currentCode);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch { setError("Não foi possível copiar. Selecione o código e copie manualmente."); }
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setError(""); setLoading(true);
+    try { await onSubmit(code); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível usar o código."); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <dialog open className="modal" aria-labelledby="access-title">
+        <div className="modal-head">
+          <div><small>ACESSO EM OUTRO APARELHO</small><h2 id="access-title">Código de acesso</h2></div>
+          <button type="button" onClick={onClose} aria-label="Fechar">×</button>
+        </div>
+        <div className="access-block">
+          <span>Código deste aparelho</span>
+          <div className="access-code-row">
+            <code>{currentCode}</code>
+            <button type="button" className="btn-secondary" onClick={copy}>{copied ? "Copiado ✓" : "Copiar"}</button>
+          </div>
+          <small>Use este código em outro celular ou computador para ver as mesmas fazendas. Guarde-o: quem tiver o código acessa os seus dados.</small>
+        </div>
+        <form onSubmit={submit} className="access-block">
+          <label htmlFor="access-code-input">Entrar com o código de outro aparelho</label>
+          <div className="access-code-row">
+            <input id="access-code-input" required value={code} onChange={(event) => setCode(event.target.value)} placeholder="Cole o código aqui" autoComplete="off" spellCheck={false} />
+            <button className="primary" type="submit" disabled={loading}>{loading ? "Verificando..." : "Acessar"}</button>
+          </div>
+          <small>Anote o código deste aparelho antes de trocar, caso queira voltar a ele depois.</small>
+          {error && <p className="form-error">{error}</p>}
+        </form>
+      </dialog>
+    </div>
   );
 }
 

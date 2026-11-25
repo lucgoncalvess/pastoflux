@@ -21,7 +21,7 @@ export type FarmAlert = {
 };
 export type AnimalSex = "male" | "female" | "unknown";
 export type Animal = { id: number; farmId: number; identification: string; category: string; sex: AnimalSex; weight: number | null; birthDate: string | null; areaId: number | null; active: boolean };
-export type Lot = { id: number; farmId: number; name: string };
+export type Lot = { id: number; farmId: number; name: string; animalCount: number };
 export type Movement = { id: number; farmId: number; lotId: number; origin: string | null; destination: string; originAreaId: number | null; destinationAreaId: number; movedAt: string; quantity: number; recoveryDays: number };
 export type PastureMeasurement = { id: number; farmId: number; areaId: number; measuredAt: string; availability: number; source: string; notes: string };
 export type RentalOffer = {
@@ -35,20 +35,51 @@ export type RentalOffer = {
  * Cliente HTTP genérico com tratamento de erros da API.
  * Intercepta mensagens de erro do backend e lança Error tipado.
  */
+const USER_ID_KEY = "pastoflux.browserUserId";
+const ACTIVE_FARM_KEY = "pastoflux.activeFarmId";
+
+/**
+ * Código de acesso deste navegador (identifica o "dono" das fazendas).
+ * Solução provisória até existir login com senha: quem tem o código acessa as fazendas.
+ */
+export function getAccessCode() {
+  let code = window.localStorage.getItem(USER_ID_KEY);
+  if (!code) {
+    code = typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `browser-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    window.localStorage.setItem(USER_ID_KEY, code);
+  }
+  return code;
+}
+
+export function normalizeAccessCode(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, "");
+}
+
+/**
+ * Valida um código de outro aparelho: só troca se ele tiver ao menos uma fazenda.
+ * Em caso de sucesso, passa a usar esse código neste navegador e devolve as fazendas.
+ */
+export async function switchAccessCode(value: string) {
+  const code = normalizeAccessCode(value);
+  if (!/^[a-z0-9-]{8,80}$/.test(code)) throw new Error("Código inválido. Confira e tente novamente.");
+  const response = await fetch("/api/farms", { headers: { "content-type": "application/json", "x-pastoflux-user-id": code } });
+  const body = (await response.json()) as { farms?: Farm[]; error?: string };
+  if (!response.ok) throw new Error(body.error ?? "Não foi possível validar o código.");
+  if (!body.farms?.length) throw new Error("Nenhuma fazenda encontrada para este código.");
+  window.localStorage.setItem(USER_ID_KEY, code);
+  window.localStorage.removeItem(ACTIVE_FARM_KEY);
+  return body.farms;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   headers.set("content-type", "application/json");
   if (typeof window !== "undefined") {
-    const activeFarmId = window.localStorage.getItem("pastoflux.activeFarmId");
+    const activeFarmId = window.localStorage.getItem(ACTIVE_FARM_KEY);
     if (activeFarmId) headers.set("x-farm-id", activeFarmId);
-    let browserUserId = window.localStorage.getItem("pastoflux.browserUserId");
-    if (!browserUserId) {
-      browserUserId = typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `browser-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      window.localStorage.setItem("pastoflux.browserUserId", browserUserId);
-    }
-    headers.set("x-pastoflux-user-id", browserUserId);
+    headers.set("x-pastoflux-user-id", getAccessCode());
   }
   const response = await fetch(path, { ...init, headers });
   const body = (await response.json()) as T & { error?: string };
@@ -97,7 +128,7 @@ export const animalApi = {
 };
 export const lotApi = {
   list: (farmId: number) => request<{ lots: Lot[] }>(`/api/lots?farmId=${farmId}`),
-  create: (payload: { farmId: number; name: string }) => request<{ lot: Lot }>("/api/lots", { method: "POST", body: JSON.stringify(payload) }),
+  create: (payload: { farmId: number; name: string; animalIds: number[] }) => request<{ lot: Lot }>("/api/lots", { method: "POST", body: JSON.stringify(payload) }),
 };
 export const movementApi = {
   list: (farmId: number) => request<{ movements: Movement[] }>(`/api/movements?farmId=${farmId}`),

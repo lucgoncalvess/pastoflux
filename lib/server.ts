@@ -3,6 +3,15 @@ import { getDb } from "@/db";
 import { alerts, animalLots, animals, areas, auditLogs, farms, lots, movements, occupations, pastureMeasurements, rentalContactRequests, rentalOffers, tasks, userFarms } from "@/db/schema";
 import { areaWarning, isCapacityExceeded, parseAnimal, parseArea, parseFarm, parseLot, parseMeasurement, parseMovement, parseRentalOffer, parseTask, recoveryEndDate } from "@/lib/domain-validation";
 
+/** Corpo JSON das requisições, validado depois pelas funções parse* do domínio. */
+type JsonBody = Record<string, unknown>;
+
+async function readJson(request: Request): Promise<JsonBody> {
+  const body: unknown = await request.json();
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Corpo da requisição inválido.");
+  return body as JsonBody;
+}
+
 /**
  * Utilitário para padronização de respostas de erro da API.
  * Mapeia erros de validação de negócio para HTTP 400 (Bad Request)
@@ -10,7 +19,7 @@ import { areaWarning, isCapacityExceeded, parseAnimal, parseArea, parseFarm, par
  */
 export function apiError(error: unknown) {
   const message = error instanceof Error ? error.message : "Não foi possível concluir a operação.";
-  const status = /autenticação obrigatória/i.test(message) ? 401 : /obrigatório|maior que zero|inválid|não encontrada|não encontrado/i.test(message) ? 400 : 500;
+  const status = /autenticação obrigatória/i.test(message) ? 401 : /obrigatório|maior que zero|inválid|não encontrada|não encontrado|não possui animais/i.test(message) ? 400 : 500;
   return Response.json({ error: message }, { status });
 }
 
@@ -71,7 +80,7 @@ export async function listFarms(request: Request) {
  */
 export async function createFarm(request: Request) {
   actorFromRequest(request);
-  const values = parseFarm(await request.json());
+  const values = parseFarm(await readJson(request));
   const db = await getDb();
   const [farm] = await db.insert(farms).values(values).returning();
   await db.insert(userFarms).values({ userId: actorFromRequest(request), farmId: farm.id, role: "owner" });
@@ -85,7 +94,7 @@ export async function createFarm(request: Request) {
 export async function updateFarm(request: Request) {
   actorFromRequest(request);
   const id = idFromUrl(request);
-  const values = parseFarm(await request.json());
+  const values = parseFarm(await readJson(request));
   await farmForId(id);
   await requireFarmAccess(request, id, true);
   const db = await getDb();
@@ -100,7 +109,7 @@ export async function updateFarm(request: Request) {
  */
 export async function createArea(request: Request) {
   actorFromRequest(request);
-  const payload = await request.json();
+  const payload = await readJson(request);
   const farmId = Number(payload.farmId);
   await requireFarmAccess(request, farmId, true);
   const farm = await farmForId(farmId);
@@ -121,7 +130,7 @@ export async function createArea(request: Request) {
 export async function updateArea(request: Request) {
   actorFromRequest(request);
   const id = idFromUrl(request);
-  const payload = await request.json();
+  const payload = await readJson(request);
   const db = await getDb();
   const [current] = await db.select().from(areas).where(eq(areas.id, id));
   if (!current) throw new Error("Área não encontrada.");
@@ -140,7 +149,7 @@ export async function updateArea(request: Request) {
  */
 export async function createTask(request: Request) {
   actorFromRequest(request);
-  const payload = await request.json();
+  const payload = await readJson(request);
   const farmId = Number(payload.farmId);
   await requireFarmAccess(request, farmId, true);
   await farmForId(farmId);
@@ -160,7 +169,7 @@ export async function updateTask(request: Request) {
   const [current] = await db.select().from(tasks).where(eq(tasks.id, id));
   if (!current) throw new Error("Tarefa não encontrada.");
   await requireFarmAccess(request, current.farmId, true);
-  const [task] = await db.update(tasks).set({ ...parseTask(await request.json()), updatedAt: new Date().toISOString() }).where(eq(tasks.id, id)).returning();
+  const [task] = await db.update(tasks).set({ ...parseTask(await readJson(request)), updatedAt: new Date().toISOString() }).where(eq(tasks.id, id)).returning();
   await audit(request, current.farmId, "update", "task", task.id);
   return Response.json({ task });
 }
@@ -172,7 +181,7 @@ export async function listAnimals(request: Request, farmId: number) {
 }
 
 export async function createAnimal(request: Request) {
-  const payload = await request.json();
+  const payload = await readJson(request);
   const farmId = Number(payload.farmId);
   actorFromRequest(request);
   await requireFarmAccess(request, farmId, true);
@@ -198,7 +207,7 @@ export async function updateAnimal(request: Request) {
   const [current] = await db.select().from(animals).where(eq(animals.id, id));
   if (!current) throw new Error("Animal não encontrado.");
   await requireFarmAccess(request, current.farmId, true);
-  const [animal] = await db.update(animals).set({ ...parseAnimal(await request.json()), updatedAt: new Date().toISOString() }).where(eq(animals.id, id)).returning();
+  const [animal] = await db.update(animals).set({ ...parseAnimal(await readJson(request)), updatedAt: new Date().toISOString() }).where(eq(animals.id, id)).returning();
   await audit(request, current.farmId, "update", "animal", id);
   return Response.json({ animal });
 }
@@ -206,12 +215,24 @@ export async function updateAnimal(request: Request) {
 export async function listLots(request: Request, farmId: number) {
   await requireFarmAccess(request, farmId);
   const db = await getDb();
-  return db.select().from(lots).where(eq(lots.farmId, farmId)).orderBy(asc(lots.name));
+  return db
+    .select({ id: lots.id, farmId: lots.farmId, name: lots.name, animalCount: sql<number>`count(${animalLots.animalId})` })
+    .from(lots)
+    .leftJoin(animalLots, eq(animalLots.lotId, lots.id))
+    .where(eq(lots.farmId, farmId))
+    .groupBy(lots.id)
+    .orderBy(asc(lots.name));
+}
+
+/** Animais vinculados ao lote (tabela animal_lots). */
+async function lotAnimalIds(db: Awaited<ReturnType<typeof getDb>>, lotId: number) {
+  const rows = await db.select({ animalId: animalLots.animalId }).from(animalLots).where(eq(animalLots.lotId, lotId));
+  return rows.map((row) => row.animalId);
 }
 
 export async function createLot(request: Request) {
   actorFromRequest(request);
-  const payload = await request.json();
+  const payload = await readJson(request);
   const farmId = Number(payload.farmId);
   await requireFarmAccess(request, farmId, true);
   await farmForId(farmId);
@@ -229,7 +250,8 @@ export async function createLot(request: Request) {
     }
   }
   await audit(request, farmId, "create", "lot", lot.id);
-  return Response.json({ lot }, { status: 201 });
+  const animalCount = (await lotAnimalIds(db, lot.id)).length;
+  return Response.json({ lot: { id: lot.id, farmId: lot.farmId, name: lot.name, animalCount } }, { status: 201 });
 }
 
 export async function listMovements(request: Request, farmId: number) {
@@ -240,12 +262,15 @@ export async function listMovements(request: Request, farmId: number) {
 
 export async function createMovement(request: Request) {
   actorFromRequest(request);
-  const payload = await request.json();
+  const payload = await readJson(request);
   const farmId = Number(payload.farmId);
   await requireFarmAccess(request, farmId, true);
   await farmForId(farmId);
-  const values = parseMovement(payload);
   const db = await getDb();
+  // A quantidade vem dos animais vinculados ao lote, não do valor enviado pelo cliente.
+  const lotAnimals = await lotAnimalIds(db, Number(payload.lotId));
+  if (!lotAnimals.length) throw new Error("O lote não possui animais vinculados. Crie o lote selecionando os animais.");
+  const values = parseMovement({ ...payload, quantity: lotAnimals.length });
   const [lot] = await db.select().from(lots).where(eq(lots.id, values.lotId));
   if (!lot || lot.farmId !== farmId) throw new Error("Lote não encontrado.");
   const [originArea] = values.originAreaId ? await db.select().from(areas).where(and(eq(areas.id, values.originAreaId), eq(areas.farmId, farmId))) : [null];
@@ -260,16 +285,21 @@ export async function createMovement(request: Request) {
     return start <= destinationDate && (!end || end >= destinationDate);
   });
   if (hasOverlap) throw new Error("A área de destino já possui ocupação na data informada.");
-  const movement = await db.transaction(async (tx) => {
-    if (values.originAreaId) {
-      await tx.update(occupations).set({ endedAt: values.movedAt }).where(and(eq(occupations.areaId, values.originAreaId), eq(occupations.lotId, values.lotId), isNull(occupations.endedAt)));
-    }
-    const [newOccupation] = await tx.insert(occupations).values({
+  // O D1 não suporta BEGIN/COMMIT (db.transaction); db.batch executa tudo de forma atômica.
+  const [, [newOccupation], , [created]] = await db.batch([
+    db.update(occupations).set({ endedAt: values.movedAt }).where(and(
+      values.originAreaId ? eq(occupations.areaId, values.originAreaId) : sql`0`,
+      eq(occupations.lotId, values.lotId),
+      isNull(occupations.endedAt),
+    )),
+    db.insert(occupations).values({
       farmId, areaId: values.destinationAreaId, lotId: values.lotId, startedAt: values.movedAt, recoveryDays: values.recoveryDays,
-    }).returning();
-    const [created] = await tx.insert(movements).values({ ...values, farmId }).returning();
-    return { ...created, occupationId: newOccupation.id };
-  });
+    }).returning(),
+    // Os animais do lote passam a constar no piquete de destino.
+    db.update(animals).set({ areaId: values.destinationAreaId, updatedAt: new Date().toISOString() }).where(and(eq(animals.farmId, farmId), inArray(animals.id, lotAnimals))),
+    db.insert(movements).values({ ...values, farmId }).returning(),
+  ]);
+  const movement = { ...created, occupationId: newOccupation.id };
   await audit(request, farmId, "create", "movement", movement.id);
   return Response.json({ movement }, { status: 201 });
 }
@@ -284,7 +314,7 @@ export async function listMeasurements(request: Request, areaId: number) {
 
 export async function createMeasurement(request: Request) {
   actorFromRequest(request);
-  const payload = await request.json();
+  const payload = await readJson(request);
   const farmId = Number(payload.farmId);
   const areaId = Number(payload.areaId);
   await requireFarmAccess(request, farmId, true);
@@ -409,8 +439,9 @@ export async function convertAlertToTask(request: Request, alertId: number) {
     const [existing] = await db.select().from(tasks).where(eq(tasks.id, current.taskId));
     if (existing) return Response.json({ task: existing, alert: current });
   }
-  const result = await db.transaction(async (tx) => {
-    const [task] = await tx.insert(tasks).values({
+  // O D1 não suporta db.transaction; db.batch é atômico. O alerta recebe o id da tarefa via subconsulta.
+  const [[task], [alert]] = await db.batch([
+    db.insert(tasks).values({
       farmId: current.farmId,
       title: current.title,
       type: "Alerta",
@@ -421,11 +452,13 @@ export async function convertAlertToTask(request: Request, alertId: number) {
       status: "pending",
       details: current.message,
       sourceAlertId: current.id,
-    }).returning();
-    const [alert] = await tx.update(alerts).set({ taskId: task.id, readAt: new Date().toISOString() }).where(eq(alerts.id, current.id)).returning();
-    return { task, alert };
-  });
-  return Response.json(result, { status: 201 });
+    }).returning(),
+    db.update(alerts).set({
+      taskId: sql`(select ${tasks.id} from ${tasks} where ${tasks.sourceAlertId} = ${current.id})`,
+      readAt: new Date().toISOString(),
+    }).where(eq(alerts.id, current.id)).returning(),
+  ]);
+  return Response.json({ task, alert }, { status: 201 });
 }
 
 export async function listRentalOffers(request: Request) {
@@ -463,7 +496,7 @@ export async function listRentalOffers(request: Request) {
 
 export async function createRentalOffer(request: Request) {
   actorFromRequest(request);
-  const payload = await request.json();
+  const payload = await readJson(request);
   const farmId = Number(payload.farmId);
   const areaId = Number(payload.areaId);
   await requireFarmAccess(request, farmId, true);
@@ -487,7 +520,7 @@ export async function createRentalOffer(request: Request) {
 }
 
 export async function updateRentalOffer(request: Request, offerId: number) {
-  const payload = await request.json();
+  const payload = await readJson(request);
   const db = await getDb();
   const [current] = await db.select().from(rentalOffers).where(eq(rentalOffers.id, offerId));
   if (!current) throw new Error("Oferta não encontrada.");

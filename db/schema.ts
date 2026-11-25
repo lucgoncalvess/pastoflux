@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { type AnySQLiteColumn, index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // Campos padrão de auditoria temporal (criação e atualização)
 const timestamps = {
@@ -158,7 +158,7 @@ export const tasks = sqliteTable("tasks", {
   dueDate: text("due_date").notNull(),
   status: text("status", { enum: ["pending", "completed"] }).notNull().default("pending"),
   details: text("details").notNull().default(""),
-  sourceAlertId: integer("source_alert_id").references(() => alerts.id, { onDelete: "set null" }),
+  sourceAlertId: integer("source_alert_id").references((): AnySQLiteColumn => alerts.id, { onDelete: "set null" }),
   ...timestamps,
 }, (table) => [
   index("tasks_farm_id_idx").on(table.farmId),
