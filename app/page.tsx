@@ -253,18 +253,34 @@ function AreasView({ farm, areas, mappedArea, openArea, occupations }: { farm: F
               const isOccupied = occStatus.toUpperCase().includes("OCUPAD");
               const isRecovery = occStatus.toUpperCase().includes("RECUPERA");
               const statusClass = isOccupied ? "active" : isRecovery ? "warning" : "good";
+              const percentFarm = farm.totalArea > 0 ? Math.round((area.size / farm.totalArea) * 100) : 0;
               return (
                 <article className="pasture-card" key={area.id}>
                   <div className="pasture-top">
                     <span className={`status ${statusClass}`}>{occStatus}</span>
-                    <button onClick={() => openArea(area)} aria-label={`Editar ${area.name}`}>•••</button>
+                    <button onClick={() => openArea(area)} className="pasture-menu-btn" aria-label={`Editar ${area.name}`}>•••</button>
                   </div>
-                  <h3>{area.name}</h3>
-                  <p>{area.size} hectares</p>
-                  <p>Capacidade máxima: {area.maxCapacity} cabeças</p>
-                  <div className="level-label"><span>Participação na fazenda</span><b>{Math.round((area.size / farm.totalArea) * 100)}%</b></div>
-                  <div className="progress"><i className="good" style={{ width: `${Math.min(100, (area.size / farm.totalArea) * 100)}%` }} /></div>
-                  <small className="pasture-notes">{area.notes || "Sem observações"}</small>
+                  <h3 className="pasture-name">{area.name}</h3>
+                  <div className="pasture-metrics-row">
+                    <div className="pasture-metric">
+                      <small>TAMANHO</small>
+                      <strong>{area.size} ha</strong>
+                    </div>
+                    <div className="pasture-metric">
+                      <small>CAPACIDADE MÁXIMA</small>
+                      <strong>{area.maxCapacity} cab</strong>
+                    </div>
+                  </div>
+                  <div className="level-label">
+                    <span>Participação na fazenda</span>
+                    <b>{percentFarm}%</b>
+                  </div>
+                  <div className="progress">
+                    <i className="good" style={{ width: `${Math.min(100, percentFarm)}%` }} />
+                  </div>
+                  <div className="pasture-notes-box">
+                    <small>{area.notes ? `Observação: ${area.notes}` : "Sem observações cadastradas"}</small>
+                  </div>
                   <div className="pasture-measurement-divider" />
                   <MeasurementForm farmId={farm.id} areaId={area.id} />
                 </article>
@@ -293,6 +309,9 @@ function MeasurementForm({ farmId, areaId }: { farmId: number; areaId: number })
     event.preventDefault();
     try {
       const val = Number(availability);
+      if (isNaN(val) || val < 0 || val > 100) {
+        throw new Error("Informe um valor entre 0 e 100%.");
+      }
       await measurementApi.create({ farmId, areaId, measuredAt: new Date().toISOString().slice(0, 10), availability: val, source: "manual", notes: "" });
       setLastRegistered(val);
       setAvailability("");
@@ -303,12 +322,19 @@ function MeasurementForm({ farmId, areaId }: { farmId: number; areaId: number })
     }
   }
 
+  function setQuickValue(val: number) {
+    setAvailability(String(val));
+  }
+
   return (
     <form onSubmit={submit} className="measurement-box">
       <div className="measurement-header">
-        <small>DISPONIBILIDADE DO PASTO</small>
-        {lastRegistered !== null && <span className="measurement-recent">{lastRegistered}% atual</span>}
+        <small className="measurement-title">DISPONIBILIDADE DO PASTO</small>
+        {lastRegistered !== null && (
+          <span className="measurement-recent-badge">Última: {lastRegistered}%</span>
+        )}
       </div>
+
       <div className="measurement-input-row">
         <div className="measurement-field">
           <input
@@ -316,15 +342,32 @@ function MeasurementForm({ farmId, areaId }: { farmId: number; areaId: number })
             min="0"
             max="100"
             required
-            placeholder="Ex.: 75"
+            placeholder="0 a 100"
             value={availability}
             onChange={(event) => setAvailability(event.target.value)}
             aria-label="Disponibilidade em porcentagem"
           />
           <span className="unit-symbol">%</span>
         </div>
-        <button type="submit" className="measurement-btn">Registrar</button>
+        <button type="submit" className="measurement-btn">
+          Registrar
+        </button>
       </div>
+
+      <div className="measurement-quick-pills">
+        <span className="quick-label">Atalhos:</span>
+        {[25, 50, 75, 100].map((pct) => (
+          <button
+            type="button"
+            key={pct}
+            className={`quick-pill ${availability === String(pct) ? "active" : ""}`}
+            onClick={() => setQuickValue(pct)}
+          >
+            {pct}%
+          </button>
+        ))}
+      </div>
+
       {message && (
         <div className={`measurement-status ${message.includes("registrada") ? "success" : "error"}`} role="status">
           {message.includes("registrada") ? <span>✓ Medição registrada com sucesso</span> : <span>{message}</span>}
@@ -529,7 +572,7 @@ function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: 
               </select>
             </label>
             <div className="form-actions wide">
-              <button className="primary herd-btn" type="submit">＋ Cadastrar animal</button>
+              <button className="primary herd-btn" type="submit">Cadastrar animal</button>
             </div>
           </form>
         ) : (
@@ -571,7 +614,7 @@ function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: 
               </select>
             </label>
             <div className="form-actions wide">
-              <button className="primary herd-btn" type="submit">＋ Cadastrar {bulkQuantity || "vários"} animais</button>
+              <button className="primary herd-btn" type="submit">Cadastrar animais</button>
             </div>
           </form>
         )}
