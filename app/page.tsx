@@ -572,7 +572,7 @@ function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: 
               </select>
             </label>
             <div className="form-actions wide">
-              <button className="primary herd-btn" type="submit">Cadastrar animal</button>
+              <button className="primary herd-btn-fixed" type="submit">Cadastrar animal</button>
             </div>
           </form>
         ) : (
@@ -614,7 +614,7 @@ function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: 
               </select>
             </label>
             <div className="form-actions wide">
-              <button className="primary herd-btn" type="submit">Cadastrar animais</button>
+              <button className="primary herd-btn-fixed" type="submit">Cadastrar animais</button>
             </div>
           </form>
         )}
@@ -637,7 +637,9 @@ function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: 
               Nome do lote
               <input required value={lotName} onChange={(event) => setLotName(event.target.value)} placeholder="Ex.: Lote Recria 2026" />
             </label>
-            <button className="primary herd-btn" type="submit">Cadastrar lote</button>
+            <div className="herd-action-box">
+              <button className="primary herd-btn-fixed" type="submit">Cadastrar lote</button>
+            </div>
           </form>
 
           <form onSubmit={moveLot} className="herd-lot-card">
@@ -666,7 +668,9 @@ function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: 
                 </select>
               </label>
             </div>
-            <button className="primary herd-btn" type="submit">Movimentar lote</button>
+            <div className="herd-action-box">
+              <button className="primary herd-btn-fixed" type="submit">Movimentar lote</button>
+            </div>
           </form>
         </div>
       </section>
@@ -928,20 +932,110 @@ function RentalView({ farm, areas, showNotice, showError }: { farm: Farm | null;
               <h2>{editingOfferId ? "Editar oferta de aluguel" : "Publicar área para aluguel"}</h2>
             </div>
           </div>
-          <form onSubmit={publish} className="form-grid rental-form">
-            <label>Área<select required value={areaId} onChange={(event) => setAreaId(event.target.value)}><option value="">Selecione uma área livre</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.name} · {area.size} ha</option>)}</select></label>
-            <label>Região<input required value={form.region} onChange={update("region")} placeholder="Ex.: Sul de Minas" /></label>
-            <label>Novilhos (&lt;150 kg) — cabeças<input required type="number" min="1" value={form.capacityNovilho} onChange={update("capacityNovilho")} /></label>
-            <label>Médios (150–300 kg) — cabeças<input required type="number" min="1" value={form.capacityMedio} onChange={update("capacityMedio")} /></label>
-            <label>Grandes (&gt;300 kg) — cabeças<input required type="number" min="1" value={form.capacityGrande} onChange={update("capacityGrande")} /></label>
-            <label>R$/cabeça/mês — novilho<input required type="number" min="0.01" step="0.01" value={form.monthlyRateNovilho} onChange={update("monthlyRateNovilho")} /></label>
-            <label>R$/cabeça/mês — médio<input required type="number" min="0.01" step="0.01" value={form.monthlyRateMedio} onChange={update("monthlyRateMedio")} /></label>
-            <label>R$/cabeça/mês — grande<input required type="number" min="0.01" step="0.01" value={form.monthlyRateGrande} onChange={update("monthlyRateGrande")} /></label>
-            <label className="wide">Contato protegido<input required value={form.contact} onChange={update("contact")} placeholder="Telefone ou e-mail" /></label>
-            <label className="wide">Condições e descrição<textarea rows={3} value={form.description} onChange={update("description")} placeholder="Cercas, água, manejo, período mínimo e outras condições" /></label>
-            <div className="form-actions wide">
-              <button className="primary rental-btn" type="submit">{editingOfferId ? "Salvar alterações" : "Publicar oferta"}</button>
-              {editingOfferId && <button type="button" className="btn-secondary" onClick={() => setEditingOfferId(null)}>Cancelar edição</button>}
+          <form onSubmit={publish} className="rental-publish-form">
+            <div className="rental-fieldset">
+              <div className="rental-fieldset-head">
+                <small>1. DADOS DO PASTO</small>
+                <span>Identifique a área cadastrada e a macrorregião</span>
+              </div>
+              <div className="rental-fields-2col">
+                <label>
+                  <span>Área / Piquete disponível</span>
+                  <select required value={areaId} onChange={(event) => setAreaId(event.target.value)}>
+                    <option value="">Selecione uma área livre</option>
+                    {areas.map((area) => (
+                      <option key={area.id} value={area.id}>{area.name} · {area.size} ha</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Região / Município</span>
+                  <input required value={form.region} onChange={update("region")} placeholder="Ex.: Sul de Minas, Triângulo Mineiro..." />
+                </label>
+              </div>
+            </div>
+
+            <div className="rental-fieldset">
+              <div className="rental-fieldset-head">
+                <small>2. CAPACIDADE E VALOR MENSAL POR CABEÇA</small>
+                <span>Defina a lotação máxima e o preço por faixa de peso</span>
+              </div>
+              <div className="rental-tiers-grid">
+                <div className="rental-tier-box">
+                  <strong>Novilhos (&lt;150 kg)</strong>
+                  <label>
+                    <small>Lotação (cabeças)</small>
+                    <input required type="number" min="1" value={form.capacityNovilho} onChange={update("capacityNovilho")} />
+                  </label>
+                  <label>
+                    <small>R$/cabeça/mês</small>
+                    <input required type="number" min="0.01" step="0.01" value={form.monthlyRateNovilho} onChange={update("monthlyRateNovilho")} placeholder="R$ 0,00" />
+                  </label>
+                </div>
+
+                <div className="rental-tier-box">
+                  <strong>Médios (150–300 kg)</strong>
+                  <label>
+                    <small>Lotação (cabeças)</small>
+                    <input required type="number" min="1" value={form.capacityMedio} onChange={update("capacityMedio")} />
+                  </label>
+                  <label>
+                    <small>R$/cabeça/mês</small>
+                    <input required type="number" min="0.01" step="0.01" value={form.monthlyRateMedio} onChange={update("monthlyRateMedio")} placeholder="R$ 0,00" />
+                  </label>
+                </div>
+
+                <div className="rental-tier-box">
+                  <strong>Grandes (&gt;300 kg)</strong>
+                  <label>
+                    <small>Lotação (cabeças)</small>
+                    <input required type="number" min="1" value={form.capacityGrande} onChange={update("capacityGrande")} />
+                  </label>
+                  <label>
+                    <small>R$/cabeça/mês</small>
+                    <input required type="number" min="0.01" step="0.01" value={form.monthlyRateGrande} onChange={update("monthlyRateGrande")} placeholder="R$ 0,00" />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="rental-fieldset rental-fieldset-terms">
+              <div className="rental-fieldset-head">
+                <small>3. CONTATO E CONDIÇÕES DO PASTO</small>
+                <span>Regras de manejo, cercamento, aguada e dados para liberação formal</span>
+              </div>
+
+              <div className="rental-term-field">
+                <label>
+                  <span>Contato protegido</span>
+                  <small className="field-note">O telefone ou e-mail só será liberado após solicitação formal.</small>
+                  <input required value={form.contact} onChange={update("contact")} placeholder="Telefone ou e-mail de contato" />
+                </label>
+              </div>
+
+              <div className="rental-term-field">
+                <label>
+                  <span>Condições e descrição</span>
+                  <small className="field-note">Informe a infraestrutura: cochos cobertos, cercas, aguadas, período mínimo, etc.</small>
+                  <textarea
+                    rows={4}
+                    value={form.description}
+                    onChange={update("description")}
+                    placeholder="Cercas, água, manejo, período mínimo e outras condições"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="rental-actions-bar">
+              <button className="primary rental-btn" type="submit">
+                {editingOfferId ? "Salvar alterações" : "Publicar oferta"}
+              </button>
+              {editingOfferId && (
+                <button type="button" className="btn-secondary" onClick={() => setEditingOfferId(null)}>
+                  Cancelar edição
+                </button>
+              )}
             </div>
           </form>
           {message && <p className="rental-message" role="status">{message}</p>}

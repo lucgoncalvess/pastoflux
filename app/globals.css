@@ -94,18 +94,44 @@ input[type="number"] {
 .herd-mode-selector{display:inline-flex;background:#eaf1ec;border-radius:10px;padding:3px;gap:3px}
 .mode-btn{border:0;background:transparent;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:750;color:#5a6e61;cursor:pointer;transition:all .15s}
 .mode-btn.active{background:#fff;color:var(--green-dark);box-shadow:0 2px 8px rgba(0,0,0,.08);font-weight:850}
-.herd-btn{height:36px!important;padding:0 16px!important;font-size:12px!important;font-weight:750!important;border-radius:8px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;white-space:nowrap!important;width:auto!important;min-width:145px!important;align-self:flex-start!important;box-shadow:0 2px 6px rgba(38,115,71,.18)!important;transition:all .15s ease!important}
-.herd-btn:hover{background:#1d6039!important;box-shadow:0 4px 10px rgba(38,115,71,.25)!important;transform:translateY(-1px)}
-.herd-btn:active{transform:translateY(0)}
+.herd-btn,.herd-btn-fixed{height:36px!important;padding:0 16px!important;font-size:12px!important;font-weight:750!important;border-radius:8px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;white-space:nowrap!important;width:auto!important;min-width:145px!important;align-self:flex-start!important;box-shadow:0 2px 6px rgba(38,115,71,.18)!important;transition:all .15s ease!important}
+.herd-btn:hover,.herd-btn-fixed:hover{background:#1d6039!important;box-shadow:0 4px 10px rgba(38,115,71,.25)!important;transform:translateY(-1px)}
+.herd-btn:active,.herd-btn-fixed:active{transform:translateY(0)}
 .herd-feedback-msg{margin-top:14px;padding:10px 14px;border-radius:8px;background:var(--green-soft);color:var(--green-dark);font-size:12px;font-weight:750;border:1px solid #cde3d4}
 .herd-lots-row{display:grid;grid-template-columns:1fr 1.35fr;gap:16px;margin-top:14px}
 .herd-lot-card{background:#f8faf8;border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px}
-.herd-lot-card .herd-btn{align-self:flex-start}
+.herd-lot-card .herd-btn,.herd-lot-card .herd-btn-fixed{align-self:flex-start}
+.herd-action-box{display:flex;align-items:center;margin-top:auto;padding-top:4px}
 .herd-lot-card h3{font-family:Georgia,serif;font-size:16px;margin:0}
 .herd-lot-card p{font-size:11px;color:var(--muted);margin:0}
 .herd-lot-card label{display:flex;flex-direction:column;font-size:11px;font-weight:750;gap:4px}
 .herd-lot-card input,.herd-lot-card select{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff;font-size:12px;width:100%}
 .move-fields{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.rental-publish-form{display:flex;flex-direction:column;gap:18px}
+.rental-fieldset{border:1px solid var(--line);border-radius:12px;background:#fafbf9;padding:18px}
+.rental-fieldset-head{display:flex;flex-direction:column;gap:5px;border-bottom:1px solid #e8ede8;padding-bottom:12px;margin-bottom:16px}
+.rental-fieldset-head small{font-size:9px;font-weight:850;letter-spacing:1px;color:var(--green)}
+.rental-fieldset-head span{font-size:11px;line-height:1.5;color:var(--muted)}
+.rental-fields-2col{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.rental-fields-2col label,.rental-term-field label{display:flex;flex-direction:column;gap:7px;font-size:11px;font-weight:750}
+.rental-fields-2col label>span,.rental-term-field label>span{line-height:1.4}
+.rental-fields-2col input,.rental-fields-2col select,.rental-term-field input,.rental-term-field textarea{width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:11px 12px;color:var(--ink);font:inherit;font-size:12px}
+.rental-fields-2col input:focus,.rental-fields-2col select:focus,.rental-term-field input:focus,.rental-term-field textarea:focus{outline:2px solid rgba(38,115,71,.16);border-color:var(--green)}
+.rental-tiers-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.rental-tier-box{display:flex;flex-direction:column;gap:12px;padding:14px;background:#fff;border:1px solid #e8ede8;border-radius:10px}
+.rental-tier-box>strong{font-size:12px;color:var(--green-dark)}
+.rental-tier-box label{display:flex;flex-direction:column;gap:6px;font-size:10px;font-weight:750;color:var(--muted)}
+.rental-tier-box label small{font-size:9px;font-weight:750;color:var(--muted);letter-spacing:0}
+.rental-tier-box input{width:100%;min-width:0;border:1px solid var(--line);border-radius:7px;background:#fff;padding:10px 11px;font:inherit;font-size:12px;color:var(--ink)}
+.rental-tier-box input:focus{outline:2px solid rgba(38,115,71,.16);border-color:var(--green)}
+.rental-fieldset-terms{display:flex;flex-direction:column;gap:16px}
+.rental-fieldset-terms .rental-fieldset-head{margin-bottom:0}
+.rental-term-field{background:#fff;border:1px solid #e8ede8;border-radius:10px;padding:14px}
+.rental-term-field label{gap:7px}
+.rental-term-field .field-note{font-size:10px;font-weight:450;line-height:1.5;color:var(--muted);letter-spacing:0}
+.rental-term-field textarea{min-height:120px;resize:vertical;line-height:1.5}
+.rental-actions-bar{display:flex;align-items:center;gap:10px;border-top:1px solid var(--line);padding-top:16px}
+.rental-btn{min-height:40px}
 .category-filter-section{display:flex;flex-direction:column;gap:14px;margin-bottom:18px}
 .filter-header h2{font-family:Georgia,serif;font-size:21px;margin:4px 0 0}
 .filter-pills-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#f8faf8;border:1px solid var(--line);border-radius:10px;padding:10px 14px}
@@ -133,5 +159,10 @@ input[type="number"] {
   .rental-specs-grid{grid-template-columns:1fr 1fr}
   .herd-lots-row{grid-template-columns:1fr}
   .move-fields{grid-template-columns:1fr}
+  .rental-fields-2col,.rental-tiers-grid{grid-template-columns:1fr}
+  .rental-fieldset{padding:14px}
+  .rental-term-field{padding:12px}
+  .rental-actions-bar{flex-direction:column;align-items:stretch}
+  .rental-actions-bar button{width:100%}
   .rental-card-head{flex-direction:column}
 }
