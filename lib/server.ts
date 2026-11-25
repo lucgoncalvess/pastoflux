@@ -3,6 +3,19 @@ import { getDb } from "@/db";
 import { alerts, animalLots, animals, areas, auditLogs, farms, lots, movements, occupations, pastureMeasurements, rentalContactRequests, rentalOffers, tasks, userFarms } from "@/db/schema";
 import { areaWarning, isCapacityExceeded, parseAnimal, parseArea, parseFarm, parseLot, parseMeasurement, parseMovement, parseRentalOffer, parseTask, recoveryEndDate } from "@/lib/domain-validation";
 
+/**
+ * O D1 limita cada consulta a 100 parâmetros vinculados.
+ * Um animal usa 8 parâmetros no INSERT (12 × 8 = 96); a busca por identificação usa 1 por item + farmId.
+ */
+const D1_ANIMAL_INSERT_CHUNK = 12;
+const D1_LOOKUP_CHUNK = 90;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 /** Corpo JSON das requisições, validado depois pelas funções parse* do domínio. */
 type JsonBody = Record<string, unknown>;
 
@@ -19,7 +32,7 @@ async function readJson(request: Request): Promise<JsonBody> {
  */
 export function apiError(error: unknown) {
   const message = error instanceof Error ? error.message : "Não foi possível concluir a operação.";
-  const status = /autenticação obrigatória/i.test(message) ? 401 : /obrigatório|maior que zero|inválid|não encontrada|não encontrado|não possui animais/i.test(message) ? 400 : 500;
+  const status = /autenticação obrigatória/i.test(message) ? 401 : /obrigatório|maior que zero|inválid|não encontrada|não encontrado|não possui animais|já existe|já possui|devem ser únicas|informe ao menos|entre 0 e 100|não pode ser publicada|sem permissão|não autorizado|x-farm-id/i.test(message) ? 400 : 500;
   return Response.json({ error: message }, { status });
 }
 
@@ -192,10 +205,17 @@ export async function createAnimal(request: Request) {
   const values = inputs.map(parseAnimal);
   const identifications = values.map((value) => value.identification);
   if (new Set(identifications).size !== identifications.length) throw new Error("As identificações dos animais devem ser únicas.");
-  const existing = await db.select({ identification: animals.identification }).from(animals).where(and(eq(animals.farmId, farmId), inArray(animals.identification, identifications)));
+  // O D1 aceita no máximo 100 parâmetros por consulta: consultas e inserções são feitas em blocos.
+  const existing = (await Promise.all(chunk(identifications, D1_LOOKUP_CHUNK).map((ids) =>
+    db.select({ identification: animals.identification }).from(animals).where(and(eq(animals.farmId, farmId), inArray(animals.identification, ids))),
+  ))).flat();
   if (existing.length) throw new Error(`Já existe animal com a identificação ${existing[0].identification}.`);
-  await db.insert(animals).values(values.map((value) => ({ ...value, farmId }))).run();
-  const created = await db.select().from(animals).where(and(eq(animals.farmId, farmId), inArray(animals.identification, identifications)));
+  const [firstInsert, ...otherInserts] = chunk(values, D1_ANIMAL_INSERT_CHUNK).map((rows) => db.insert(animals).values(rows.map((value) => ({ ...value, farmId }))));
+  // db.batch é atômico no D1: ou todos os blocos são gravados, ou nenhum.
+  await db.batch([firstInsert, ...otherInserts]);
+  const created = (await Promise.all(chunk(identifications, D1_LOOKUP_CHUNK).map((ids) =>
+    db.select().from(animals).where(and(eq(animals.farmId, farmId), inArray(animals.identification, ids))),
+  ))).flat();
   for (const animal of created) await audit(request, farmId, "create", "animal", animal.id);
   return inputs.length === 1 ? Response.json({ animal: created[0] }, { status: 201 }) : Response.json({ animals: created }, { status: 201 });
 }

@@ -5,6 +5,8 @@ import { alertApi, animalApi, getAccessCode, switchAccessCode, areaApi, farmApi,
 import { simulateGrazing } from "@/lib/simulator";
 
 type PersistentView = "visao" | "fazenda" | "rebanho" | "pastagens" | "simulador" | "agenda" | "aluguel";
+/** Valores iniciais para criar uma atividade já preenchida (ex.: a partir do simulador). */
+type TaskDraft = Partial<Pick<PersistedTask, "title" | "type" | "dueDate" | "lote" | "origin" | "destination" | "details">>;
 type DialogName = "farm" | "area" | "task" | "access" | "farms" | null;
 
 const persistentNav: { id: PersistentView; label: string; icon: string }[] = [
@@ -35,6 +37,7 @@ function PersistentPastoFlux() {
   const [farmMode, setFarmMode] = useState<"edit" | "create">("edit");
   const [editingArea, setEditingArea] = useState<Area | null>(null);
   const [editingTask, setEditingTask] = useState<PersistedTask | null>(null);
+  const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -100,7 +103,7 @@ function PersistentPastoFlux() {
       const payload = { farmId: farm.id, title: String(formData.get("title") ?? ""), type: String(formData.get("type") ?? "Pastagem"), lote: String(formData.get("lote") ?? ""), origin: String(formData.get("origin") ?? ""), destination: String(formData.get("destination") ?? ""), dueDate: String(formData.get("dueDate") ?? ""), status: editingTask?.status ?? "pending" as const, details: String(formData.get("details") ?? "") };
       const result = editingTask ? await taskApi.update(editingTask.id, payload) : await taskApi.create(payload);
       setTasks((values) => editingTask ? values.map((item) => item.id === result.task.id ? result.task : item) : [...values, result.task]);
-      setDialog(null); setEditingTask(null); showNotice("Atividade salva com sucesso.");
+      setDialog(null); setEditingTask(null); setTaskDraft(null); showNotice("Atividade salva com sucesso.");
     } catch (cause) { showError(cause); }
   }
 
@@ -113,7 +116,7 @@ function PersistentPastoFlux() {
   }
 
   function openArea(area?: Area) { setEditingArea(area ?? null); setError(""); setDialog("area"); }
-  function openTask(task?: PersistedTask) { setEditingTask(task ?? null); setError(""); setDialog("task"); }
+  function openTask(task?: PersistedTask, draft?: TaskDraft) { setEditingTask(task ?? null); setTaskDraft(task ? null : draft ?? null); setError(""); setDialog("task"); }
   function openFarm(mode: "edit" | "create" = farm ? "edit" : "create") { setFarmMode(mode); setError(""); setDialog("farm"); }
   const needFarm = !farm;
   function activateFarm(selected: Farm) {
@@ -160,7 +163,7 @@ function PersistentPastoFlux() {
           {view === "fazenda" && <FarmView farm={farm} mappedArea={mappedArea} areaCount={areas.length} openFarm={() => openFarm()} />}
           {view === "pastagens" && <AreasView farm={farm} areas={areas} mappedArea={mappedArea} openArea={openArea} occupations={occupations} />}
           {view === "agenda" && <AgendaPersisted farm={farm} tasks={tasks} openTask={openTask} toggleTask={toggleTask} />}
-          {view === "simulador" && <SimulatorPersisted onSchedule={() => openTask()} />}
+          {view === "simulador" && <SimulatorPersisted onSchedule={(draft) => openTask(undefined, draft)} />}
           {view === "rebanho" && <HerdView farm={farm} areas={areas} animals={animals} lots={lots} onAnimals={(created) => setAnimals((values) => [...values, ...created])} onLot={() => farm && loadFarmData(farm)} onMovement={() => farm && loadFarmData(farm)} />}
           {view === "aluguel" && <RentalView farm={farm} areas={areas} showNotice={showNotice} showError={showError} />}
         </div>
@@ -169,7 +172,7 @@ function PersistentPastoFlux() {
       {dialog === "farms" && <FarmPickerDialog farms={farms} activeId={farm?.id ?? null} onPick={activateFarm} onCreate={() => openFarm("create")} onClose={farm ? () => setDialog(null) : undefined} />}
       {dialog === "access" && <AccessCodeDialog onSubmit={enterAccessCode} onClose={() => setDialog(null)} />}
       {dialog === "area" && farm && <AreaDialog farm={farm} area={editingArea} onClose={() => { setDialog(null); setEditingArea(null); }} onSave={saveArea} error={error} />}
-      {dialog === "task" && farm && <TaskDialog task={editingTask} onClose={() => { setDialog(null); setEditingTask(null); }} onSave={saveTask} error={error} />}
+      {dialog === "task" && farm && <TaskDialog task={editingTask} draft={taskDraft} onClose={() => { setDialog(null); setEditingTask(null); setTaskDraft(null); }} onSave={saveTask} error={error} />}
       {notice && <div className="toast" role="status"><span>✓</span>{notice}</div>}
       {needFarm && !dialog && (
         <div className="empty-state">
@@ -854,12 +857,24 @@ function AgendaPersisted({ farm, tasks, openTask, toggleTask }: { farm: Farm | n
   );
 }
 
-function SimulatorPersisted({ onSchedule }: { onSchedule: () => void }) {
+function SimulatorPersisted({ onSchedule }: { onSchedule: (draft: TaskDraft) => void }) {
   const [animals, setAnimals] = useState(48);
   const [area, setArea] = useState(24);
   const [availability, setAvailability] = useState(18);
   let days: number | string = "—";
   try { days = simulateGrazing({ animals, area, availability }); } catch { /* valores incompletos durante a digitação */ }
+  const valid = typeof days === "number";
+
+  // Leva o cenário simulado para a Agenda: data sugerida = hoje + dias estimados.
+  function schedule() {
+    if (typeof days !== "number") return;
+    onSchedule({
+      title: "Remanejamento sugerido pelo simulador",
+      type: "Pastagem",
+      dueDate: localDatePlusDays(days),
+      details: `Simulação: ${animals} animais em ${area} ha com ${availability}% de disponibilidade → ${days} ${days === 1 ? "dia" : "dias"}.`,
+    });
+  }
 
   return (
     <>
@@ -872,10 +887,10 @@ function SimulatorPersisted({ onSchedule }: { onSchedule: () => void }) {
         </div>
         <div className="sim-result">
           <div className="result-head"><span>RESULTADO ATUALIZADO</span><i>● ao vivo</i></div>
-          <div className="result-number"><strong>{days}</strong><span>dias</span></div>
+          <div className="result-number"><strong>{days}</strong><span>{days === 1 ? "dia" : "dias"}</span></div>
           <h2>até atingir o limite estimado</h2>
           <p>Com {animals} animais em {area} hectares e {availability}% de disponibilidade.</p>
-          <button className="primary big full" onClick={onSchedule}>Agendar remanejamento</button>
+          <button className="primary big full" onClick={schedule} disabled={!valid}>Agendar remanejamento</button>
         </div>
       </section>
       <p className="disclaimer">Estimativa demonstrativa. A decisão final deve considerar avaliação de campo e orientação técnica.</p>
@@ -1345,8 +1360,10 @@ function AreaDialog({ farm, area, onClose, onSave, error }: { farm: Farm; area: 
   );
 }
 
-function TaskDialog({ task, onClose, onSave, error }: { task: PersistedTask | null; onClose: () => void; onSave: (data: FormData) => void; error: string }) {
-  const today = new Date().toISOString().slice(0, 10);
+function TaskDialog({ task, draft, onClose, onSave, error }: { task: PersistedTask | null; draft?: TaskDraft | null; onClose: () => void; onSave: (data: FormData) => void; error: string }) {
+  const today = localDatePlusDays(0);
+  // Edição usa a tarefa existente; criação pode vir pré-preenchida (ex.: pelo simulador).
+  const initial: TaskDraft = task ?? draft ?? {};
   return (
     <div className="modal-backdrop">
       <dialog open className="modal">
@@ -1356,13 +1373,13 @@ function TaskDialog({ task, onClose, onSave, error }: { task: PersistedTask | nu
             <button type="button" onClick={onClose} aria-label="Fechar">×</button>
           </div>
           <div className="form-grid">
-            <label className="wide">Título<input name="title" required defaultValue={task?.title ?? "Remanejamento"} /></label>
-            <label>Categoria<select name="type" defaultValue={task?.type ?? "Pastagem"}><option>Pastagem</option><option>Sanidade</option><option>Operação</option></select></label>
-            <label>Data planejada<input name="dueDate" type="date" required defaultValue={task?.dueDate ?? today} /></label>
-            <label>Lote<input name="lote" defaultValue={task?.lote ?? ""} /></label>
-            <label>Origem<input name="origin" defaultValue={task?.origin ?? ""} /></label>
-            <label>Destino<input name="destination" defaultValue={task?.destination ?? ""} /></label>
-            <label className="wide">Detalhes<input name="details" defaultValue={task?.details ?? ""} /></label>
+            <label className="wide">Título<input name="title" required defaultValue={initial.title ?? "Remanejamento"} /></label>
+            <label>Categoria<select name="type" defaultValue={initial.type ?? "Pastagem"}><option>Pastagem</option><option>Sanidade</option><option>Operação</option></select></label>
+            <label>Data planejada<input name="dueDate" type="date" required defaultValue={initial.dueDate ?? today} /></label>
+            <label>Lote<input name="lote" defaultValue={initial.lote ?? ""} /></label>
+            <label>Origem<input name="origin" defaultValue={initial.origin ?? ""} /></label>
+            <label>Destino<input name="destination" defaultValue={initial.destination ?? ""} /></label>
+            <label className="wide">Detalhes<input name="details" defaultValue={initial.details ?? ""} /></label>
           </div>
           {error && <p className="form-error">{error}</p>}
           <div className="modal-actions">
@@ -1373,6 +1390,13 @@ function TaskDialog({ task, onClose, onSave, error }: { task: PersistedTask | nu
       </dialog>
     </div>
   );
+}
+
+/** Data local (AAAA-MM-DD) somada a N dias — evita o deslocamento de fuso de toISOString(). */
+function localDatePlusDays(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function shortDate(value: string) { return new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(".", ""); }
