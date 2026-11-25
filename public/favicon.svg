@@ -1,5 +1,14 @@
-<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <rect width="32" height="32" rx="9" fill="#173e2a"/>
-  <path d="M7 21c5-1 8-5 9-12 4 5 3 11-1 14-3 2-6 1-8-2Z" fill="#b8d45e"/>
-  <path d="M14 23c4-1 7-4 9-9 2 5 0 10-4 12-2 1-4 0-5-3Z" fill="#ffffff" opacity=".92"/>
+<svg width="32" height="32" viewBox="0 0 29 29" xmlns="http://www.w3.org/2000/svg">
+  <!-- Mesma marca da sidebar (.brand-mark): 3 folhas lima giradas 42° sobre o verde escuro -->
+  <defs>
+    <clipPath id="c"><rect width="29" height="29" rx="8"/></clipPath>
+    <path id="leaf" d="M0 18A7 18 0 0 1 7 0A7 18 0 0 1 0 18Z" fill="#b8d45e"/>
+  </defs>
+  <rect width="29" height="29" rx="8" fill="#173e2a"/>
+  <g clip-path="url(#c)">
+    <use href="#leaf" transform="translate(6 10) rotate(42 3.5 9)"/>
+    <use href="#leaf" transform="translate(13 5) rotate(42 3.5 9)"/>
+    <use href="#leaf" transform="translate(19 9) rotate(42 3.5 9)"/>
+  </g>
+  <rect x=".5" y=".5" width="28" height="28" rx="7.5" fill="none" stroke="#fff" stroke-opacity=".23"/>
 </svg>

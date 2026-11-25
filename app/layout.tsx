@@ -3,7 +3,8 @@ import { headers } from "next/headers";
 import "./globals.css";
 
 const title = "PastoFlux — Gestão inteligente da fazenda";
-const description = "Gerencie rebanho, pastagens, alertas, simulações e aluguel em uma única visão.";
+const ICON_VERSION = 2;
+const description ="Gerencie rebanho, pastagens, alertas, simulações e aluguel em uma única visão.";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
@@ -13,7 +14,16 @@ export async function generateMetadata(): Promise<Metadata> {
   const image = `${protocol}://${host}/og.png`;
   return {
     title, description,
-    icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
+    // ?v= força os navegadores a buscar o ícone novo (eles guardam favicons por muito tempo).
+    // Ao trocar o ícone de novo, aumente ICON_VERSION.
+    icons: {
+      icon: [
+        { url: `/favicon.svg?v=${ICON_VERSION}`, type: "image/svg+xml" },
+        { url: `/favicon-32.png?v=${ICON_VERSION}`, sizes: "32x32", type: "image/png" },
+      ],
+      shortcut: `/favicon.ico?v=${ICON_VERSION}`,
+      apple: { url: `/apple-touch-icon.png?v=${ICON_VERSION}`, sizes: "180x180" },
+    },
     openGraph: { title, description, images: [{ url: image, width: 1200, height: 630, alt: "PastoFlux — gestão inteligente da fazenda" }] },
     twitter: { card: "summary_large_image", title, description, images: [image] },
   };
