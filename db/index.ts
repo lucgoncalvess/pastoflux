@@ -115,7 +115,7 @@ const SCHEMA_STATEMENTS = [
   `CREATE UNIQUE INDEX IF NOT EXISTS "alerts_dedupe_key_idx" ON "alerts" ("dedupe_key")`,
 ];
 
-let initPromise: Promise<void> | null = null;
+let isInitialized = false;
 
 async function initializeSchema(db: typeof env.DB) {
   if (typeof db.prepare === "function") {
@@ -139,15 +139,10 @@ export async function getDb() {
     );
   }
 
-  if (!initPromise) {
-    initPromise = initializeSchema(env.DB).catch((err) => {
-      initPromise = null;
-      console.error("Falha ao inicializar o esquema do banco de dados:", err);
-      throw err;
-    });
+  if (!isInitialized) {
+    await initializeSchema(env.DB);
+    isInitialized = true;
   }
-
-  await initPromise;
 
   return drizzle(env.DB, { schema });
 }
