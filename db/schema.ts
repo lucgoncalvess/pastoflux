@@ -27,12 +27,14 @@ export const animals = sqliteTable("animals", {
   sex: text("sex", { enum: ["male", "female", "unknown"] }).notNull().default("unknown"),
   weight: real("weight"),
   birthDate: text("birth_date"),
+  areaId: integer("area_id").references(() => areas.id, { onDelete: "set null" }),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   index("animals_farm_id_idx").on(table.farmId),
   uniqueIndex("animals_farm_identification_idx").on(table.farmId, table.identification),
+  index("animals_area_id_idx").on(table.areaId),
 ]);
 
 export const userFarms = sqliteTable("user_farms", {

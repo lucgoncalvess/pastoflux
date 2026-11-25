@@ -182,7 +182,32 @@ function OverviewPersisted({ farm, mappedArea, areas, pending, alerts, onAlertTa
       </section>
       {farm && <section className="panel">
         <div className="panel-heading"><div><h2>Alertas de manejo</h2><p>Capacidade, ocupação e recuperação das áreas da fazenda ativa.</p></div></div>
-        {alerts.length ? <div className="agenda-list">{alerts.slice(0, 5).map((alert) => <article className="agenda-item" key={alert.id}><div className="agenda-copy"><span className="status good">{alert.type === "capacity_exceeded" ? "Capacidade" : alert.type === "occupation_ended" ? "Ocupação" : "Recuperação"}</span><h2>{alert.title}</h2><p>{alert.message} · Data: {alert.dueDate}</p></div><div className="task-actions">{alert.taskId ? <span className="status">Na agenda</span> : <button className="primary" onClick={() => onAlertTask(alert)}>Criar tarefa</button>}</div></article>)}</div> : <div className="agenda-empty"><strong>Nenhum alerta registrado</strong><p>Os alertas serão criados automaticamente a partir das ocupações.</p></div>}
+        {alerts.length ? (
+          <div className="alert-list">
+            {alerts.slice(0, 5).map((alert) => (
+              <article className="alert-item" key={alert.id}>
+                <div className={`alert-indicator ${alert.type === "capacity_exceeded" ? "warn" : "info"}`}>
+                  {alert.type === "capacity_exceeded" ? "!" : "◉"}
+                </div>
+                <div className="alert-copy">
+                  <div className="alert-tags">
+                    <span className={`status ${alert.type === "capacity_exceeded" ? "warning" : "good"}`}>
+                      {alert.type === "capacity_exceeded" ? "Capacidade" : alert.type === "occupation_ended" ? "Ocupação" : "Recuperação"}
+                    </span>
+                    <span className="countdown">Data: {alert.dueDate}</span>
+                  </div>
+                  <h2>{alert.title}</h2>
+                  <p>{alert.message}</p>
+                </div>
+                <div className="task-actions">
+                  {alert.taskId ? <span className="status">Na agenda</span> : <button className="primary" onClick={() => onAlertTask(alert)}>Criar tarefa</button>}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="agenda-empty"><strong>Nenhum alerta registrado</strong><p>Os alertas serão criados automaticamente a partir das ocupações.</p></div>
+        )}
       </section>}
     </>
   );
@@ -223,19 +248,28 @@ function AreasView({ farm, areas, mappedArea, openArea, occupations }: { farm: F
             <span><small>DISPONÍVEL</small><strong>{Math.max(0, farm.totalArea - mappedArea)} ha</strong></span>
           </section>
           <section className="pasture-grid">
-            {areas.length ? areas.map((area) => (
-              <article className="pasture-card" key={area.id}>
-                <div className="pasture-top"><span className="status good">Cadastrada</span><button onClick={() => openArea(area)} aria-label={`Editar ${area.name}`}>•••</button></div>
-                <h3>{area.name}</h3>
-                <p>{area.size} hectares</p>
-                <p>Capacidade máxima: {area.maxCapacity} cabeças</p>
-                <div className="level-label"><span>Participação na fazenda</span><b>{Math.round((area.size / farm.totalArea) * 100)}%</b></div>
-                <div className="progress"><i className="good" style={{ width: `${Math.min(100, (area.size / farm.totalArea) * 100)}%` }} /></div>
-                <small>{area.notes || "Sem observações"}</small>
-                <span className="status">{occupations.find((item) => item.areaId === area.id)?.status ?? "DISPONIVEL"}</span>
-                <MeasurementForm farmId={farm.id} areaId={area.id} />
-              </article>
-            )) : (
+            {areas.length ? areas.map((area) => {
+              const occStatus = occupations.find((item) => item.areaId === area.id)?.status ?? "DISPONÍVEL";
+              const isOccupied = occStatus.toUpperCase().includes("OCUPAD");
+              const isRecovery = occStatus.toUpperCase().includes("RECUPERA");
+              const statusClass = isOccupied ? "active" : isRecovery ? "warning" : "good";
+              return (
+                <article className="pasture-card" key={area.id}>
+                  <div className="pasture-top">
+                    <span className={`status ${statusClass}`}>{occStatus}</span>
+                    <button onClick={() => openArea(area)} aria-label={`Editar ${area.name}`}>•••</button>
+                  </div>
+                  <h3>{area.name}</h3>
+                  <p>{area.size} hectares</p>
+                  <p>Capacidade máxima: {area.maxCapacity} cabeças</p>
+                  <div className="level-label"><span>Participação na fazenda</span><b>{Math.round((area.size / farm.totalArea) * 100)}%</b></div>
+                  <div className="progress"><i className="good" style={{ width: `${Math.min(100, (area.size / farm.totalArea) * 100)}%` }} /></div>
+                  <small className="pasture-notes">{area.notes || "Sem observações"}</small>
+                  <div className="pasture-measurement-divider" />
+                  <MeasurementForm farmId={farm.id} areaId={area.id} />
+                </article>
+              );
+            }) : (
               <div className="agenda-empty">
                 <strong>Nenhuma área cadastrada</strong>
                 <p>Inclua o primeiro piquete ou pasto da propriedade.</p>
@@ -253,23 +287,68 @@ function AreasView({ farm, areas, mappedArea, openArea, occupations }: { farm: F
 function MeasurementForm({ farmId, areaId }: { farmId: number; areaId: number }) {
   const [availability, setAvailability] = useState("");
   const [message, setMessage] = useState("");
+  const [lastRegistered, setLastRegistered] = useState<number | null>(null);
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     try {
-      await measurementApi.create({ farmId, areaId, measuredAt: new Date().toISOString().slice(0, 10), availability: Number(availability), source: "manual", notes: "" });
-      setAvailability(""); setMessage("Medição registrada.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível registrar."); }
+      const val = Number(availability);
+      await measurementApi.create({ farmId, areaId, measuredAt: new Date().toISOString().slice(0, 10), availability: val, source: "manual", notes: "" });
+      setLastRegistered(val);
+      setAvailability("");
+      setMessage("Medição registrada.");
+      setTimeout(() => setMessage(""), 4000);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível registrar.");
+    }
   }
-  return <form onSubmit={submit} className="measurement-form"><label>Disponibilidade (%)<input type="number" min="0" max="100" required value={availability} onChange={(event) => setAvailability(event.target.value)} /></label><button type="submit">Registrar</button>{message && <small role="status">{message}</small>}</form>;
+
+  return (
+    <form onSubmit={submit} className="measurement-box">
+      <div className="measurement-header">
+        <small>DISPONIBILIDADE DO PASTO</small>
+        {lastRegistered !== null && <span className="measurement-recent">{lastRegistered}% atual</span>}
+      </div>
+      <div className="measurement-input-row">
+        <div className="measurement-field">
+          <input
+            type="number"
+            min="0"
+            max="100"
+            required
+            placeholder="Ex.: 75"
+            value={availability}
+            onChange={(event) => setAvailability(event.target.value)}
+            aria-label="Disponibilidade em porcentagem"
+          />
+          <span className="unit-symbol">%</span>
+        </div>
+        <button type="submit" className="measurement-btn">Registrar</button>
+      </div>
+      {message && (
+        <div className={`measurement-status ${message.includes("registrada") ? "success" : "error"}`} role="status">
+          {message.includes("registrada") ? <span>✓ Medição registrada com sucesso</span> : <span>{message}</span>}
+        </div>
+      )}
+    </form>
+  );
 }
 
 function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: { farm: Farm | null; areas: Area[]; animals: Animal[]; lots: Lot[]; onAnimals: (animals: Animal[]) => void; onLot: (lot: Lot) => void; onMovement: () => void }) {
+  const [creationMode, setCreationMode] = useState<"single" | "bulk">("single");
   const [identification, setIdentification] = useState("");
   const [category, setCategory] = useState("Gado");
   const [sex, setSex] = useState<"male" | "female">("male");
+  const [weight, setWeight] = useState("");
+  const [areaId, setAreaId] = useState("");
+
   const [bulkPrefix, setBulkPrefix] = useState("GADO");
   const [bulkQuantity, setBulkQuantity] = useState("5");
+  const [bulkCategory, setBulkCategory] = useState("Gado");
+  const [bulkSex, setBulkSex] = useState<"male" | "female">("male");
   const [bulkWeight, setBulkWeight] = useState("");
+  const [bulkAreaId, setBulkAreaId] = useState("");
+
   const [lotName, setLotName] = useState("");
   const [lotId, setLotId] = useState("");
   const [originAreaId, setOriginAreaId] = useState("");
@@ -277,15 +356,37 @@ function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: 
   const [message, setMessage] = useState("");
   const [stats, setStats] = useState<{ heads: number; averageWeight: number; categories: { category: string; heads: number }[] } | null>(null);
   const [categoryFilter, setCategoryFilter] = useState("");
+
   useEffect(() => {
     if (farm) void herdStatsApi.get(farm.id, categoryFilter || undefined).then(setStats).catch((error) => setMessage(error instanceof Error ? error.message : "Não foi possível carregar indicadores."));
   }, [farm, categoryFilter]);
+
   if (!farm) return <div className="agenda-empty"><strong>Cadastre a fazenda primeiro</strong></div>;
   const activeFarm = farm;
+
   async function addAnimal(event: React.FormEvent) {
     event.preventDefault();
-    try { const { animal } = await animalApi.create({ farmId: activeFarm.id, identification, category, sex, weight: null, birthDate: null, active: true }); onAnimals([animal]); setIdentification(""); setMessage("Animal cadastrado."); } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar."); }
+    try {
+      const { animal } = await animalApi.create({
+        farmId: activeFarm.id,
+        identification,
+        category,
+        sex,
+        weight: weight ? Number(weight) : null,
+        areaId: areaId ? Number(areaId) : null,
+        birthDate: null,
+        active: true,
+      });
+      onAnimals([animal]);
+      setIdentification("");
+      setWeight("");
+      setMessage("Animal cadastrado com sucesso.");
+      setTimeout(() => setMessage(""), 4000);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar.");
+    }
   }
+
   async function addAnimalsInBulk(event: React.FormEvent) {
     event.preventDefault();
     try {
@@ -293,36 +394,315 @@ function HerdView({ farm, areas, animals, lots, onAnimals, onLot, onMovement }: 
       const prefix = bulkPrefix.trim();
       const animalsToCreate = Array.from({ length: quantity }, (_, index) => ({
         identification: `${prefix}-${String(index + 1).padStart(3, "0")}`,
-        category,
-        sex,
+        category: bulkCategory,
+        sex: bulkSex,
         weight: bulkWeight ? Number(bulkWeight) : null,
+        areaId: bulkAreaId ? Number(bulkAreaId) : null,
         birthDate: null,
         active: true,
       }));
       const result = await animalApi.createMany({ farmId: activeFarm.id, animals: animalsToCreate });
       onAnimals(result.animals);
-      setMessage(`${result.animals.length} animais cadastrados.`);
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar os animais."); }
+      setMessage(`${result.animals.length} animais cadastrados com sucesso.`);
+      setTimeout(() => setMessage(""), 4000);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar os animais.");
+    }
   }
+
   async function addLot(event: React.FormEvent) {
     event.preventDefault();
-    try { const { lot } = await lotApi.create({ farmId: activeFarm.id, name: lotName }); onLot(lot); setLotName(""); setMessage("Lote cadastrado."); } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar."); }
+    try {
+      const { lot } = await lotApi.create({ farmId: activeFarm.id, name: lotName });
+      onLot(lot);
+      setLotName("");
+      setMessage("Lote cadastrado com sucesso.");
+      setTimeout(() => setMessage(""), 4000);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível cadastrar.");
+    }
   }
+
   async function moveLot(event: React.FormEvent) {
     event.preventDefault();
     try {
-      await movementApi.create({ farmId: activeFarm.id, lotId: Number(lotId), origin: areas.find((item) => item.id === Number(originAreaId))?.name ?? null, destination: areas.find((item) => item.id === Number(destinationAreaId))?.name ?? "", originAreaId: originAreaId ? Number(originAreaId) : null, destinationAreaId: Number(destinationAreaId), movedAt: new Date().toISOString().slice(0, 10), quantity: animals.length, recoveryDays: 0 });
-      setMessage("Movimentação registrada."); onMovement();
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Não foi possível movimentar o lote."); }
+      await movementApi.create({
+        farmId: activeFarm.id,
+        lotId: Number(lotId),
+        origin: areas.find((item) => item.id === Number(originAreaId))?.name ?? null,
+        destination: areas.find((item) => item.id === Number(destinationAreaId))?.name ?? "",
+        originAreaId: originAreaId ? Number(originAreaId) : null,
+        destinationAreaId: Number(destinationAreaId),
+        movedAt: new Date().toISOString().slice(0, 10),
+        quantity: animals.length,
+        recoveryDays: 0,
+      });
+      setMessage("Movimentação registrada com sucesso.");
+      onMovement();
+      setTimeout(() => setMessage(""), 4000);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível movimentar o lote.");
+    }
   }
-  return <><PageHeading eyebrow="CONTROLE DO REBANHO" title="Animais e lotes" text="Cadastre o rebanho persistente e organize os animais por lote." />
-    <section className="panel herd-panel"><div className="herd-section-heading"><div><small>CADASTRO RÁPIDO</small><h2>Adicionar animal</h2></div><span>Identifique o sexo para melhorar o manejo do rebanho.</span></div><form onSubmit={addAnimal} className="form-grid herd-form"><label>Identificação<input required value={identification} onChange={(event) => setIdentification(event.target.value)} /></label><label>Categoria<input required value={category} onChange={(event) => setCategory(event.target.value)} /></label><label>Sexo<select required value={sex} onChange={(event) => setSex(event.target.value as "male" | "female")}><option value="female">Fêmea</option><option value="male">Macho</option></select></label><button className="primary herd-submit" type="submit">＋ Cadastrar animal</button></form>
-    <form onSubmit={addAnimalsInBulk} className="form-grid herd-form herd-form--bulk"><div className="herd-form-title"><small>CADASTRO EM LOTE</small><strong>Vários animais com peso parecido</strong></div><label>Prefixo das identificações<input required value={bulkPrefix} onChange={(event) => setBulkPrefix(event.target.value)} placeholder="Ex.: LOTE-A" /></label><label>Quantidade<input required type="number" min="1" max="500" step="1" value={bulkQuantity} onChange={(event) => setBulkQuantity(event.target.value)} /></label><label>Categoria<input required value={category} onChange={(event) => setCategory(event.target.value)} /></label><label>Sexo<select required value={sex} onChange={(event) => setSex(event.target.value as "male" | "female")}><option value="female">Fêmea</option><option value="male">Macho</option></select></label><label>Peso parecido (kg)<input type="number" min="0.01" step="0.01" value={bulkWeight} onChange={(event) => setBulkWeight(event.target.value)} placeholder="Opcional" /></label><button className="primary herd-submit" type="submit">＋ Cadastrar vários</button></form>
-    <form onSubmit={addLot} className="form-grid"><label>Nome do lote<input required value={lotName} onChange={(event) => setLotName(event.target.value)} /></label><button className="primary" type="submit">Cadastrar lote</button></form>{message && <p role="status">{message}</p>}
-    <form onSubmit={moveLot} className="form-grid"><label>Lote<select required value={lotId} onChange={(event) => setLotId(event.target.value)}><option value="">Selecione</option>{lots.map((lot) => <option key={lot.id} value={lot.id}>{lot.name}</option>)}</select></label><label>Origem<select value={originAreaId} onChange={(event) => setOriginAreaId(event.target.value)}><option value="">Sem origem</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label><label>Destino<select required value={destinationAreaId} onChange={(event) => setDestinationAreaId(event.target.value)}><option value="">Selecione</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label><button className="primary" type="submit">Movimentar lote</button></form>
-    <div className="summary-strip"><span><small>ANIMAIS ATIVOS</small><strong>{stats?.heads ?? animals.filter((animal) => animal.active).length}</strong></span><span><small>PESO MÉDIO</small><strong>{Number(stats?.averageWeight ?? 0).toFixed(1)} kg</strong></span><span><small>LOTES</small><strong>{lots.length}</strong></span></div>
-    <label>Filtrar categoria<select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="">Todas</option>{Array.from(new Set(animals.map((animal) => animal.category))).map((item) => <option key={item}>{item}</option>)}</select></label>
-    <ul>{animals.map((animal) => <li key={animal.id}>{animal.identification} · {animal.sex === "female" ? "Fêmea" : animal.sex === "male" ? "Macho" : "Sexo não informado"} · {animal.category}</li>)}</ul></section></>;
+
+  const filteredAnimals = categoryFilter
+    ? animals.filter((animal) => animal.category === categoryFilter)
+    : animals;
+
+  const categories = Array.from(new Set(animals.map((animal) => animal.category)));
+
+  return (
+    <>
+      <PageHeading
+        eyebrow="CONTROLE DO REBANHO"
+        title="Animais e lotes"
+        text="Cadastre o rebanho persistente, acompanhe pesos, aloque piquetes e organize os animais por lote."
+      />
+
+      <div className="summary-strip">
+        <span>
+          <small>ANIMAIS ATIVOS</small>
+          <strong>{stats?.heads ?? animals.filter((animal) => animal.active).length}</strong>
+        </span>
+        <span>
+          <small>PESO MÉDIO</small>
+          <strong>{Number(stats?.averageWeight ?? 0).toFixed(1)} kg</strong>
+        </span>
+        <span>
+          <small>LOTES CADASTRADOS</small>
+          <strong>{lots.length}</strong>
+        </span>
+      </div>
+
+      <section className="panel herd-panel">
+        <div className="herd-section-heading">
+          <div>
+            <small>CADASTRO DE REBANHO</small>
+            <h2>Adicionar animais</h2>
+          </div>
+          <div className="herd-mode-selector">
+            <button
+              type="button"
+              className={creationMode === "single" ? "mode-btn active" : "mode-btn"}
+              onClick={() => setCreationMode("single")}
+            >
+              1 unidade (Individual)
+            </button>
+            <button
+              type="button"
+              className={creationMode === "bulk" ? "mode-btn active" : "mode-btn"}
+              onClick={() => setCreationMode("bulk")}
+            >
+              Vários animais (Em lote)
+            </button>
+          </div>
+        </div>
+
+        {creationMode === "single" ? (
+          <form onSubmit={addAnimal} className="form-grid herd-form">
+            <label>
+              Identificação / Brinco
+              <input required value={identification} onChange={(event) => setIdentification(event.target.value)} placeholder="Ex.: BR-104" />
+            </label>
+            <label>
+              Categoria
+              <input required value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Ex.: Vaca, Bezerro, Touro" />
+            </label>
+            <label>
+              Sexo
+              <select required value={sex} onChange={(event) => setSex(event.target.value as "male" | "female")}>
+                <option value="male">Macho</option>
+                <option value="female">Fêmea</option>
+              </select>
+            </label>
+            <label>
+              Peso (kg)
+              <input type="number" min="1" step="0.1" value={weight} onChange={(event) => setWeight(event.target.value)} placeholder="Ex.: 340.5" />
+            </label>
+            <label className="wide">
+              Área / Piquete atual
+              <select value={areaId} onChange={(event) => setAreaId(event.target.value)}>
+                <option value="">Selecione o piquete (opcional)</option>
+                {areas.map((area) => (
+                  <option key={area.id} value={area.id}>{area.name} · {area.size} ha</option>
+                ))}
+              </select>
+            </label>
+            <div className="form-actions wide">
+              <button className="primary herd-btn" type="submit">＋ Cadastrar animal</button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={addAnimalsInBulk} className="form-grid herd-form herd-form--bulk">
+            <div className="herd-form-title">
+              <small>CADASTRO EM MASSA</small>
+              <strong>Vários animais com pesos e características semelhantes</strong>
+            </div>
+            <label>
+              Prefixo das identificações
+              <input required value={bulkPrefix} onChange={(event) => setBulkPrefix(event.target.value)} placeholder="Ex.: LOTE-A" />
+            </label>
+            <label>
+              Quantidade de animais
+              <input required type="number" min="1" max="500" step="1" value={bulkQuantity} onChange={(event) => setBulkQuantity(event.target.value)} />
+            </label>
+            <label>
+              Categoria
+              <input required value={bulkCategory} onChange={(event) => setBulkCategory(event.target.value)} placeholder="Ex.: Garrote, Novilha" />
+            </label>
+            <label>
+              Sexo
+              <select required value={bulkSex} onChange={(event) => setBulkSex(event.target.value as "male" | "female")}>
+                <option value="male">Macho</option>
+                <option value="female">Fêmea</option>
+              </select>
+            </label>
+            <label>
+              Peso médio estimado (kg)
+              <input type="number" min="0.01" step="0.01" value={bulkWeight} onChange={(event) => setBulkWeight(event.target.value)} placeholder="Opcional" />
+            </label>
+            <label>
+              Área / Piquete de destino
+              <select value={bulkAreaId} onChange={(event) => setBulkAreaId(event.target.value)}>
+                <option value="">Selecione o piquete (opcional)</option>
+                {areas.map((area) => (
+                  <option key={area.id} value={area.id}>{area.name} · {area.size} ha</option>
+                ))}
+              </select>
+            </label>
+            <div className="form-actions wide">
+              <button className="primary herd-btn" type="submit">＋ Cadastrar {bulkQuantity || "vários"} animais</button>
+            </div>
+          </form>
+        )}
+
+        {message && <div className="herd-feedback-msg" role="status">{message}</div>}
+      </section>
+
+      <section className="panel herd-panel">
+        <div className="herd-section-heading">
+          <div>
+            <small>MANEJO DE LOTES</small>
+            <h2>Lotes e movimentações</h2>
+          </div>
+        </div>
+        <div className="herd-lots-row">
+          <form onSubmit={addLot} className="herd-lot-card">
+            <h3>Criar novo lote</h3>
+            <p>Agrupe animais para facilitar rotações e controle de pastagem.</p>
+            <label>
+              Nome do lote
+              <input required value={lotName} onChange={(event) => setLotName(event.target.value)} placeholder="Ex.: Lote Recria 2026" />
+            </label>
+            <button className="primary herd-btn" type="submit">Cadastrar lote</button>
+          </form>
+
+          <form onSubmit={moveLot} className="herd-lot-card">
+            <h3>Movimentar lote entre áreas</h3>
+            <p>Transfira o lote para outro piquete e atualize a ocupação.</p>
+            <div className="move-fields">
+              <label>
+                Lote
+                <select required value={lotId} onChange={(event) => setLotId(event.target.value)}>
+                  <option value="">Selecione</option>
+                  {lots.map((lot) => <option key={lot.id} value={lot.id}>{lot.name}</option>)}
+                </select>
+              </label>
+              <label>
+                Origem
+                <select value={originAreaId} onChange={(event) => setOriginAreaId(event.target.value)}>
+                  <option value="">Sem origem</option>
+                  {areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
+                </select>
+              </label>
+              <label>
+                Destino
+                <select required value={destinationAreaId} onChange={(event) => setDestinationAreaId(event.target.value)}>
+                  <option value="">Selecione</option>
+                  {areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
+                </select>
+              </label>
+            </div>
+            <button className="primary herd-btn" type="submit">Movimentar lote</button>
+          </form>
+        </div>
+      </section>
+
+      <section className="panel herd-panel">
+        <div className="category-filter-section">
+          <div className="filter-header">
+            <div>
+              <small>REBANHO ATIVO</small>
+              <h2>Animais cadastrados ({filteredAnimals.length})</h2>
+            </div>
+          </div>
+          {categories.length > 0 && (
+            <div className="filter-pills-bar">
+              <span className="filter-title"><small>FILTRAR CATEGORIA:</small></span>
+              <div className="filter-pills">
+                <button
+                  type="button"
+                  className={categoryFilter === "" ? "filter-pill active" : "filter-pill"}
+                  onClick={() => setCategoryFilter("")}
+                >
+                  Todas ({animals.length})
+                </button>
+                {categories.map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    className={categoryFilter === cat ? "filter-pill active" : "filter-pill"}
+                    onClick={() => setCategoryFilter(cat)}
+                  >
+                    {cat} ({animals.filter((a) => a.category === cat).length})
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {filteredAnimals.length ? (
+          <div className="animal-grid">
+            {filteredAnimals.map((animal) => {
+              const areaName = areas.find((a) => a.id === animal.areaId)?.name;
+              return (
+                <article className="animal-card" key={animal.id}>
+                  <div className="animal-card-header">
+                    <span className="animal-id-badge">{animal.identification}</span>
+                    <span className={`status ${animal.sex === "male" ? "active" : "good"}`}>
+                      {animal.sex === "female" ? "Fêmea" : animal.sex === "male" ? "Macho" : "Não informado"}
+                    </span>
+                  </div>
+                  <div className="animal-details">
+                    <div className="animal-detail-item">
+                      <small>CATEGORIA</small>
+                      <strong>{animal.category}</strong>
+                    </div>
+                    <div className="animal-detail-item">
+                      <small>PESO</small>
+                      <strong>{animal.weight ? `${animal.weight} kg` : "—"}</strong>
+                    </div>
+                  </div>
+                  <div className="animal-location">
+                    <small>PIQUETE / ÁREA</small>
+                    <span className="location-tag">
+                      {areaName ? `▱ ${areaName}` : "Sem área vinculada"}
+                    </span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="agenda-empty">
+            <strong>Nenhum animal encontrado</strong>
+            <p>{categoryFilter ? "Não há animais cadastrados na categoria selecionada." : "Cadastre o primeiro animal acima."}</p>
+          </div>
+        )}
+      </section>
+    </>
+  );
 }
 
 function AgendaPersisted({ farm, tasks, openTask, toggleTask }: { farm: Farm | null; tasks: PersistedTask[]; openTask: (task?: PersistedTask) => void; toggleTask: (task: PersistedTask) => void }) {
@@ -497,31 +877,138 @@ function RentalView({ farm, areas, showNotice, showError }: { farm: Farm | null;
   return (
     <>
       <PageHeading eyebrow="REDE DE PASTAGENS" title="Aluguel por cabeça de gado" text="O proprietário define a lotação e o valor mensal por cabeça conforme a faixa de peso." />
-      {farm && <section className="panel">
-        <h2>{editingOfferId ? "Editar oferta de aluguel" : "Publicar área para aluguel"}</h2>
-        <form onSubmit={publish} className="form-grid">
-          <label>Área<select required value={areaId} onChange={(event) => setAreaId(event.target.value)}><option value="">Selecione uma área livre</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.name} · {area.size} ha</option>)}</select></label>
-          <label>Região<input required value={form.region} onChange={update("region")} placeholder="Ex.: Sul de Minas" /></label>
-          <label>Novilhos (&lt;150 kg) — cabeças<input required type="number" min="1" value={form.capacityNovilho} onChange={update("capacityNovilho")} /></label>
-          <label>Médios (150–300 kg) — cabeças<input required type="number" min="1" value={form.capacityMedio} onChange={update("capacityMedio")} /></label>
-          <label>Grandes (&gt;300 kg) — cabeças<input required type="number" min="1" value={form.capacityGrande} onChange={update("capacityGrande")} /></label>
-          <label>R$/cabeça/mês — novilho<input required type="number" min="0.01" step="0.01" value={form.monthlyRateNovilho} onChange={update("monthlyRateNovilho")} /></label>
-          <label>R$/cabeça/mês — médio<input required type="number" min="0.01" step="0.01" value={form.monthlyRateMedio} onChange={update("monthlyRateMedio")} /></label>
-          <label>R$/cabeça/mês — grande<input required type="number" min="0.01" step="0.01" value={form.monthlyRateGrande} onChange={update("monthlyRateGrande")} /></label>
-          <label>Contato protegido<input required value={form.contact} onChange={update("contact")} placeholder="Telefone ou e-mail" /></label>
-          <label className="wide">Condições e descrição<textarea value={form.description} onChange={update("description")} placeholder="Cercas, água, manejo, período mínimo e outras condições" /></label>
-          <button className="primary" type="submit">{editingOfferId ? "Salvar alterações" : "Publicar oferta"}</button>
-          {editingOfferId && <button type="button" onClick={() => setEditingOfferId(null)}>Cancelar edição</button>}
-        </form>
-        {message && <p role="status">{message}</p>}
-      </section>}
-      {farm && <section className="panel">
-        <div className="panel-heading"><div><h2>Minhas ofertas</h2><p>Gerencie as ofertas publicadas na fazenda ativa.</p></div></div>
-        {ownerOffers.length ? <div className="agenda-list">{ownerOffers.map((offer) => <article className="agenda-item" key={offer.id}><div className="agenda-copy"><span className="status good">Publicada</span><h2>{offer.areaName} · {offer.areaSize} ha</h2><p>{offer.region} · {offer.capacityNovilho + offer.capacityMedio + offer.capacityGrande} cabeças totais</p></div><div className="task-actions"><button onClick={() => editOffer(offer)}>Editar</button><button onClick={() => closeOffer(offer.id)}>Encerrar oferta</button></div></article>)}</div> : <div className="agenda-empty"><strong>Nenhuma oferta publicada</strong><p>Cadastre uma oferta acima para começar.</p></div>}
-      </section>}
-      <section className="panel">
-        <div className="panel-heading"><div><h2>Ofertas disponíveis</h2><p>O contato só aparece após a solicitação formal.</p></div><div className="form-grid"><input aria-label="Filtrar por região" placeholder="Região" value={region} onChange={(event) => setRegion(event.target.value)} /><input aria-label="Capacidade mínima" type="number" min="0" placeholder="Cabeças mín." value={minCapacity} onChange={(event) => setMinCapacity(event.target.value)} /></div></div>
-        {offers.length ? <div className="agenda-list">{offers.map((offer) => <article className="agenda-item" key={offer.id}><div className="agenda-copy"><span className="status good">{offer.region}</span><h2>{offer.areaName} · {offer.areaSize} ha</h2><p>Lotação: {offer.capacityNovilho} novilhos · {offer.capacityMedio} médios · {offer.capacityGrande} grandes</p><p>Mensal: R$ {offer.monthlyRateNovilho.toFixed(2)} / R$ {offer.monthlyRateMedio.toFixed(2)} / R$ {offer.monthlyRateGrande.toFixed(2)} por cabeça</p><p>{offer.description || "Sem condições adicionais informadas."}</p></div><div className="task-actions"><button className="primary" onClick={() => requestContact(offer.id)}>Solicitar contato</button></div></article>)}</div> : <div className="agenda-empty"><strong>Nenhuma oferta encontrada</strong><p>Ajuste os filtros ou publique uma área livre.</p></div>}
+      {farm && (
+        <section className="panel rental-section">
+          <div className="panel-heading">
+            <div>
+              <small>ANÚNCIO DE PASTO</small>
+              <h2>{editingOfferId ? "Editar oferta de aluguel" : "Publicar área para aluguel"}</h2>
+            </div>
+          </div>
+          <form onSubmit={publish} className="form-grid rental-form">
+            <label>Área<select required value={areaId} onChange={(event) => setAreaId(event.target.value)}><option value="">Selecione uma área livre</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.name} · {area.size} ha</option>)}</select></label>
+            <label>Região<input required value={form.region} onChange={update("region")} placeholder="Ex.: Sul de Minas" /></label>
+            <label>Novilhos (&lt;150 kg) — cabeças<input required type="number" min="1" value={form.capacityNovilho} onChange={update("capacityNovilho")} /></label>
+            <label>Médios (150–300 kg) — cabeças<input required type="number" min="1" value={form.capacityMedio} onChange={update("capacityMedio")} /></label>
+            <label>Grandes (&gt;300 kg) — cabeças<input required type="number" min="1" value={form.capacityGrande} onChange={update("capacityGrande")} /></label>
+            <label>R$/cabeça/mês — novilho<input required type="number" min="0.01" step="0.01" value={form.monthlyRateNovilho} onChange={update("monthlyRateNovilho")} /></label>
+            <label>R$/cabeça/mês — médio<input required type="number" min="0.01" step="0.01" value={form.monthlyRateMedio} onChange={update("monthlyRateMedio")} /></label>
+            <label>R$/cabeça/mês — grande<input required type="number" min="0.01" step="0.01" value={form.monthlyRateGrande} onChange={update("monthlyRateGrande")} /></label>
+            <label className="wide">Contato protegido<input required value={form.contact} onChange={update("contact")} placeholder="Telefone ou e-mail" /></label>
+            <label className="wide">Condições e descrição<textarea rows={3} value={form.description} onChange={update("description")} placeholder="Cercas, água, manejo, período mínimo e outras condições" /></label>
+            <div className="form-actions wide">
+              <button className="primary rental-btn" type="submit">{editingOfferId ? "Salvar alterações" : "Publicar oferta"}</button>
+              {editingOfferId && <button type="button" className="btn-secondary" onClick={() => setEditingOfferId(null)}>Cancelar edição</button>}
+            </div>
+          </form>
+          {message && <p className="rental-message" role="status">{message}</p>}
+        </section>
+      )}
+
+      {farm && (
+        <section className="panel rental-section">
+          <div className="panel-heading">
+            <div>
+              <small>PASTOS DA MINHA PROPRIEDADE</small>
+              <h2>Minhas ofertas</h2>
+              <p>Gerencie as ofertas publicadas na fazenda ativa.</p>
+            </div>
+          </div>
+          {ownerOffers.length ? (
+            <div className="rental-card-list">
+              {ownerOffers.map((offer) => (
+                <article className="rental-card" key={offer.id}>
+                  <div className="rental-card-head">
+                    <div className="rental-card-title">
+                      <span className="status good">Publicada</span>
+                      <h3>{offer.areaName} · {offer.areaSize} ha</h3>
+                    </div>
+                    <span className="rental-region-badge">{offer.region}</span>
+                  </div>
+                  <div className="rental-specs-grid">
+                    <div className="spec-box">
+                      <small>TOTAL DE CABEÇAS</small>
+                      <strong>{offer.capacityNovilho + offer.capacityMedio + offer.capacityGrande}</strong>
+                    </div>
+                    <div className="spec-box">
+                      <small>NOVILHO (&lt;150KG)</small>
+                      <strong>{offer.capacityNovilho} cab</strong>
+                      <span>R$ {offer.monthlyRateNovilho.toFixed(2)}/mês</span>
+                    </div>
+                    <div className="spec-box">
+                      <small>MÉDIO (150-300KG)</small>
+                      <strong>{offer.capacityMedio} cab</strong>
+                      <span>R$ {offer.monthlyRateMedio.toFixed(2)}/mês</span>
+                    </div>
+                    <div className="spec-box">
+                      <small>GRANDE (&gt;300KG)</small>
+                      <strong>{offer.capacityGrande} cab</strong>
+                      <span>R$ {offer.monthlyRateGrande.toFixed(2)}/mês</span>
+                    </div>
+                  </div>
+                  {offer.description && <p className="rental-desc">{offer.description}</p>}
+                  <div className="rental-card-actions">
+                    <button type="button" className="btn-secondary" onClick={() => editOffer(offer)}>Editar</button>
+                    <button type="button" className="btn-danger" onClick={() => closeOffer(offer.id)}>Encerrar oferta</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="agenda-empty"><strong>Nenhuma oferta publicada</strong><p>Cadastre uma oferta acima para começar.</p></div>
+          )}
+        </section>
+      )}
+
+      <section className="panel rental-section">
+        <div className="panel-heading rental-explore-head">
+          <div>
+            <small>EXPLORAR DISPONIBILIDADES</small>
+            <h2>Ofertas disponíveis</h2>
+            <p>O contato só aparece após a solicitação formal.</p>
+          </div>
+          <div className="rental-search-bar">
+            <input aria-label="Filtrar por região" placeholder="Buscar por região..." value={region} onChange={(event) => setRegion(event.target.value)} />
+            <input aria-label="Capacidade mínima" type="number" min="0" placeholder="Mín. cabeças" value={minCapacity} onChange={(event) => setMinCapacity(event.target.value)} />
+          </div>
+        </div>
+        {offers.length ? (
+          <div className="rental-card-list">
+            {offers.map((offer) => (
+              <article className="rental-card" key={offer.id}>
+                <div className="rental-card-head">
+                  <div className="rental-card-title">
+                    <span className="status good">{offer.region}</span>
+                    <h3>{offer.areaName} · {offer.areaSize} ha</h3>
+                  </div>
+                </div>
+                <div className="rental-specs-grid">
+                  <div className="spec-box">
+                    <small>NOVILHO (&lt;150KG)</small>
+                    <strong>{offer.capacityNovilho} cab</strong>
+                    <span>R$ {offer.monthlyRateNovilho.toFixed(2)}/mês</span>
+                  </div>
+                  <div className="spec-box">
+                    <small>MÉDIO (150-300KG)</small>
+                    <strong>{offer.capacityMedio} cab</strong>
+                    <span>R$ {offer.monthlyRateMedio.toFixed(2)}/mês</span>
+                  </div>
+                  <div className="spec-box">
+                    <small>GRANDE (&gt;300KG)</small>
+                    <strong>{offer.capacityGrande} cab</strong>
+                    <span>R$ {offer.monthlyRateGrande.toFixed(2)}/mês</span>
+                  </div>
+                </div>
+                <p className="rental-desc">{offer.description || "Sem condições adicionais informadas."}</p>
+                <div className="rental-card-actions">
+                  <button className="primary rental-btn" onClick={() => requestContact(offer.id)}>Solicitar contato</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="agenda-empty"><strong>Nenhuma oferta encontrada</strong><p>Ajuste os filtros ou publique uma área livre.</p></div>
+        )}
       </section>
     </>
   );

@@ -42,9 +42,10 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS "tasks_farm_id_idx" ON "tasks" ("farm_id")`,
   `CREATE INDEX IF NOT EXISTS "tasks_farm_status_due_date_idx" ON "tasks" ("farm_id", "status", "due_date")`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "tasks_source_alert_idx" ON "tasks" ("source_alert_id")`,
-  `CREATE TABLE IF NOT EXISTS "animals" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "farm_id" integer NOT NULL, "identification" text NOT NULL, "category" text NOT NULL, "sex" text DEFAULT 'unknown' NOT NULL, "weight" real, "birth_date" text, "active" integer DEFAULT 1 NOT NULL, "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL, "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL, FOREIGN KEY ("farm_id") REFERENCES "farms"("id") ON DELETE cascade)`,
+  `CREATE TABLE IF NOT EXISTS "animals" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "farm_id" integer NOT NULL, "identification" text NOT NULL, "category" text NOT NULL, "sex" text DEFAULT 'unknown' NOT NULL, "weight" real, "birth_date" text, "area_id" integer, "active" integer DEFAULT 1 NOT NULL, "created_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL, "updated_at" text DEFAULT CURRENT_TIMESTAMP NOT NULL, FOREIGN KEY ("farm_id") REFERENCES "farms"("id") ON DELETE cascade, FOREIGN KEY ("area_id") REFERENCES "areas"("id") ON DELETE set null)`,
   `CREATE INDEX IF NOT EXISTS "animals_farm_id_idx" ON "animals" ("farm_id")`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "animals_farm_identification_idx" ON "animals" ("farm_id", "identification")`,
+  `CREATE INDEX IF NOT EXISTS "animals_area_id_idx" ON "animals" ("area_id")`,
   `CREATE TABLE IF NOT EXISTS "user_farms" ("user_id" text NOT NULL, "farm_id" integer NOT NULL, "role" text DEFAULT 'owner' NOT NULL, FOREIGN KEY ("farm_id") REFERENCES "farms"("id") ON DELETE cascade)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "user_farms_user_farm_idx" ON "user_farms" ("user_id", "farm_id")`,
   `CREATE INDEX IF NOT EXISTS "user_farms_farm_idx" ON "user_farms" ("farm_id")`,
@@ -124,6 +125,9 @@ async function initializeSchema(db: typeof env.DB) {
     const animalColumns = await db.prepare(`PRAGMA table_info("animals")`).all<{ name: string }>();
     if (!animalColumns.results.some((column) => column.name === "sex")) {
       await db.prepare(`ALTER TABLE "animals" ADD COLUMN "sex" text DEFAULT 'unknown' NOT NULL`).run();
+    }
+    if (!animalColumns.results.some((column) => column.name === "area_id")) {
+      await db.prepare(`ALTER TABLE "animals" ADD COLUMN "area_id" integer REFERENCES "areas"("id") ON DELETE set null`).run();
     }
   }
 }

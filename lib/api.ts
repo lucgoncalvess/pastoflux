@@ -20,7 +20,7 @@ export type FarmAlert = {
   title: string; message: string; dueDate: string; readAt: string | null; taskId: number | null;
 };
 export type AnimalSex = "male" | "female" | "unknown";
-export type Animal = { id: number; farmId: number; identification: string; category: string; sex: AnimalSex; weight: number | null; birthDate: string | null; active: boolean };
+export type Animal = { id: number; farmId: number; identification: string; category: string; sex: AnimalSex; weight: number | null; birthDate: string | null; areaId: number | null; active: boolean };
 export type Lot = { id: number; farmId: number; name: string };
 export type Movement = { id: number; farmId: number; lotId: number; origin: string | null; destination: string; originAreaId: number | null; destinationAreaId: number; movedAt: string; quantity: number; recoveryDays: number };
 export type PastureMeasurement = { id: number; farmId: number; areaId: number; measuredAt: string; availability: number; source: string; notes: string };
