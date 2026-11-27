@@ -44,6 +44,7 @@ lib/server.ts                serviços, controle de acesso, auditoria, alertas
 lib/domain-validation.js     validações e regras de negócio puras
 lib/simulator.js             cálculo do simulador
 db/schema.ts                 esquema Drizzle (14 tabelas)
+db/seed-demo.sql             dados de demonstração para avaliação
 drizzle/                     migrações SQL versionadas
 worker/index.ts              entrada do Cloudflare Worker
 tests/                       testes automatizados
@@ -60,6 +61,55 @@ npm run dev        # http://localhost:4173 com D1 local emulado
 ```
 
 Em `localhost` o servidor usa a identidade `local-development`, sem necessidade de login.
+
+## Dados de demonstração (avaliação)
+
+Para avaliar a aplicação com a base já povoada, o repositório traz o seed
+[`db/seed-demo.sql`](db/seed-demo.sql), que cria a **Fazenda Santa Clara** com
+dados coerentes em todos os módulos:
+
+| Conteúdo | Quantidade |
+|---|---|
+| Piquetes | 5 (em uso, em recuperação, disponível e ofertado para aluguel) |
+| Animais | 12 (novilhos, bois gordos e matrizes) |
+| Lotes | 3 (Recria, Engorda e Matrizes) |
+| Ocupações | 4 (duas em andamento, duas encerradas) |
+| Movimentações | 3 |
+| Medições de pasto | 4 |
+| Tarefas da agenda | 5 (3 pendentes, 2 concluídas) |
+| Alertas | 3 (um de cada tipo) |
+| Oferta de aluguel | 1 publicada |
+
+### Como povoar
+
+```bash
+# base local emulada (junto com npm run dev)
+npx wrangler d1 execute pastoflux-production --local --file db/seed-demo.sql
+
+# base de produção, visível em https://www.pastoflux.me
+npx wrangler login
+npx wrangler d1 execute pastoflux-production --remote --file db/seed-demo.sql
+```
+
+O script é reexecutável: ele remove a fazenda de demonstração antes de recriá-la,
+então rodar mais de uma vez não duplica registros. Todos os identificadores ficam
+na faixa `9001`–`9112`, fora da sequência usada pelos dados reais.
+
+### Como acessar a fazenda de demonstração
+
+Em `localhost` a fazenda aparece automaticamente (identidade `local-development`).
+Na aplicação em produção, informe este **código de acesso** na tela de acesso:
+
+```
+11111111-2222-3333-4444-555555555555
+```
+
+### Como remover depois
+
+```bash
+npx wrangler d1 execute pastoflux-production --remote \
+  --command "DELETE FROM farms WHERE id=9001; DELETE FROM user_farms WHERE farm_id=9001;"
+```
 
 ## Validação
 
